@@ -215,7 +215,7 @@ const getSubjectCompetencies = async (req, res) => {
  */
 const createSubject = async (req, res) => {
   try {
-    const { subject_code, subject_name, description } = req.body;
+    const { subject_code, subject_name, description, is_compulsory, applicable_levels, is_subsidiary } = req.body;
 
     // Validation
     if (!subject_code || !subject_name) {
@@ -238,12 +238,18 @@ const createSubject = async (req, res) => {
       });
     }
 
+    // Default applicable_levels if not provided
+    const levels = applicable_levels || ['S1','S2','S3','S4','S5','S6'];
+
+    // Get the logged-in user's ID
+    const createdBy = req.user.id;
+
     // Create subject
     const result = await query(
-      `INSERT INTO subjects (subject_code, subject_name, description, created_by)
-       VALUES ($1, $2, $3, $4)
+      `INSERT INTO subjects (subject_code, subject_name, description, is_compulsory, applicable_levels, is_subsidiary, created_by_user_id)
+       VALUES ($1, $2, $3, $4, $5, $6, $7)
        RETURNING *`,
-      [subject_code, subject_name, description, req.user.id]
+      [subject_code, subject_name, description, is_compulsory || false, levels, is_subsidiary || false, createdBy]
     );
 
     // Log action
@@ -276,7 +282,7 @@ const createSubject = async (req, res) => {
 const updateSubject = async (req, res) => {
   try {
     const { id } = req.params;
-    const { subject_code, subject_name, description } = req.body;
+    const { subject_code, subject_name, description, is_compulsory, applicable_levels, is_subsidiary } = req.body;
 
     // Check if exists
     const existing = await query('SELECT * FROM subjects WHERE id = $1', [id]);
@@ -309,10 +315,13 @@ const updateSubject = async (req, res) => {
        SET subject_code = COALESCE($1, subject_code),
            subject_name = COALESCE($2, subject_name),
            description = COALESCE($3, description),
+           is_compulsory = COALESCE($4, is_compulsory),
+           applicable_levels = COALESCE($5, applicable_levels),
+           is_subsidiary = COALESCE($6, is_subsidiary),
            updated_at = NOW()
-       WHERE id = $4
+       WHERE id = $7
        RETURNING *`,
-      [subject_code, subject_name, description, id]
+      [subject_code, subject_name, description, is_compulsory, applicable_levels, is_subsidiary, id]
     );
 
     // Log action
@@ -631,11 +640,107 @@ const deleteSubjectPaper = async (req, res) => {
   }
 };
 
+//additional endpoints for subjects being compulsory or subsidiary or optional can be added here
+/**
+ * @route   GET /api/subjects/compulsory/:level
+ * @desc    Get compulsory subjects for a level
+ * @access  Private
+ */
+const getCompulsorySubjects = async (req, res) => {
+  try {
+    const { level } = req.params;
+
+    const result = await query(
+      `SELECT * FROM subjects 
+       WHERE is_compulsory = TRUE 
+       AND $1 = ANY(applicable_levels)
+       ORDER BY subject_name`,
+      [level]
+    );
+
+    res.status(200).json({
+      success: true,
+      message: 'Compulsory subjects retrieved successfully',
+      data: result.rows,
+    });
+  } catch (error) {
+    console.error('Error fetching compulsory subjects:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Failed to retrieve compulsory subjects',
+      error: error.message,
+    });
+  }
+};
+
+/**
+ * @route   GET /api/subjects/optional/:level
+ * @desc    Get optional subjects for a level
+ * @access  Private
+ */
+const getOptionalSubjects = async (req, res) => {
+  try {
+    const { level } = req.params;
+
+    const result = await query(
+      `SELECT * FROM subjects 
+       WHERE is_compulsory = FALSE 
+       AND is_subsidiary = FALSE
+       AND $1 = ANY(applicable_levels)
+       ORDER BY subject_name`,
+      [level]
+    );
+
+    res.status(200).json({
+      success: true,
+      message: 'Optional subjects retrieved successfully',
+      data: result.rows,
+    });
+  } catch (error) {
+    console.error('Error fetching optional subjects:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Failed to retrieve optional subjects',
+      error: error.message,
+    });
+  }
+};
+
+/**
+ * @route   GET /api/subjects/subsidiaries
+ * @desc    Get subsidiary subjects (for S5/S6)
+ * @access  Private
+ */
+const getSubsidiarySubjects = async (req, res) => {
+  try {
+    const result = await query(
+      `SELECT * FROM subjects 
+       WHERE is_subsidiary = TRUE
+       ORDER BY subject_name`
+    );
+
+    res.status(200).json({
+      success: true,
+      message: 'Subsidiary subjects retrieved successfully',
+      data: result.rows,
+    });
+  } catch (error) {
+    console.error('Error fetching subsidiary subjects:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Failed to retrieve subsidiary subjects',
+      error: error.message,
+    });
+  }
+};
 module.exports = {
   getAllSubjects,
   getSubjectById,
   getSubjectTeachers,
   getSubjectCompetencies,
+  getCompulsorySubjects,
+  getOptionalSubjects,
+  getSubsidiarySubjects,
   createSubject,
   updateSubject,
   deleteSubject,

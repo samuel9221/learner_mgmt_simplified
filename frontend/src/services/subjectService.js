@@ -137,3 +137,38 @@ export const deleteSubjectPaper = async (paperId) => {
     throw error;
   }
 };
+/**
+ * Get compulsory subjects for a level
+ */
+export const getCompulsorySubjects = async (level) => {
+  try {
+    const response = await api.get(`/subjects/compulsory/${level}`);
+    return response.data;
+  } catch (error) {
+    throw error;
+  }
+};
+
+/**
+ * Get optional subjects for a level
+ */
+export const getOptionalSubjects = async (level) => {
+  try {
+    const response = await api.get(`/subjects/optional/${level}`);
+    return response.data;
+  } catch (error) {
+    throw error;
+  }
+};
+
+/**
+ * Get subsidiary subjects
+ */
+export const getSubsidiarySubjects = async () => {
+  try {
+    const response = await api.get('/subjects/subsidiaries');
+    return response.data;
+  } catch (error) {
+    throw error;
+  }
+};

@@ -782,6 +782,22 @@ ALTER TABLE classes ALTER COLUMN created_by DROP NOT NULL;
 -- Remove the check constraint from classes table
 ALTER TABLE classes DROP CONSTRAINT IF EXISTS check_class_teacher_required;
 
+
+-- Added new columns to subjects table
+ALTER TABLE subjects 
+ADD COLUMN is_compulsory BOOLEAN DEFAULT FALSE,
+ADD COLUMN applicable_levels VARCHAR(10)[] DEFAULT ARRAY['S1','S2','S3','S4','S5','S6'],
+ADD COLUMN is_subsidiary BOOLEAN DEFAULT FALSE;
+
+-- Create index for faster queries
+CREATE INDEX idx_subjects_is_compulsory ON subjects(is_compulsory);
+CREATE INDEX idx_subjects_is_subsidiary ON subjects(is_subsidiary);
+
+-- Add comment for clarity
+COMMENT ON COLUMN subjects.is_compulsory IS 'For S1-S4: If true, all students must take this subject. If false, it is optional.';
+COMMENT ON COLUMN subjects.applicable_levels IS 'Array of levels where this subject is offered (S1, S2, S3, S4, S5, S6)';
+COMMENT ON COLUMN subjects.is_subsidiary IS 'For S5-S6: If true, this is a subsidiary subject (GP, ICT, Sub Math)';
+
 -- ============================================================================
 -- END OF SCHEMA
 -- ============================================================================

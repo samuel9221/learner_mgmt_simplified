@@ -20,6 +20,10 @@ const SubjectsPage = () => {
     subject_code: '',
     subject_name: '',
     description: '',
+    is_compulsory: false,
+    //is_optional: false,
+    is_subsidiary: false,
+    applicable_levels: ["S1", "S2", "S3", "S4"],
   });
 
   useEffect(() => {
@@ -253,66 +257,175 @@ const SubjectsPage = () => {
       )}
 
       {/* Create Modal */}
-      {showCreateModal && (
-        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
-          <div className="bg-white rounded-lg p-6 max-w-md w-full">
-            <h2 className="text-xl font-bold text-gray-900 mb-4">Add Subject</h2>
-            <form onSubmit={handleCreate}>
-              <div className="space-y-4">
-                <div>
-                  <label className="form-label">Subject Code *</label>
-                  <input
-                    type="text"
-                    value={formData.subject_code}
-                    onChange={(e) => setFormData({...formData, subject_code: e.target.value.toUpperCase()})}
-                    className="form-input"
-                    placeholder="e.g., MATH, ENG, SCI"
-                    maxLength={10}
-                    required
-                  />
-                  <p className="text-xs text-gray-500 mt-1">Short code (max 10 characters)</p>
-                </div>
-                <div>
-                  <label className="form-label">Subject Name *</label>
-                  <input
-                    type="text"
-                    value={formData.name}
-                    onChange={(e) => setFormData({...formData, subject_name: e.target.value})}
-                    className="form-input"
-                    placeholder="e.g., Mathematics"
-                    required
-                  />
-                </div>
-                <div>
-                  <label className="form-label">Description</label>
-                  <textarea
-                    value={formData.description}
-                    onChange={(e) => setFormData({...formData, description: e.target.value})}
-                    className="form-input"
-                    rows="3"
-                    placeholder="Brief description of the subject..."
-                  />
+                  {showCreateModal && (
+              <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
+                <div className="bg-white rounded-lg p-6 max-w-md w-full max-h-[90vh] overflow-y-auto">
+                  <h2 className="text-xl font-bold text-gray-900 mb-4">Add Subject</h2>
+                  <form onSubmit={handleCreate}>
+                    <div className="space-y-4">
+                      <div>
+                        <label className="form-label">Subject Code *</label>
+                        <input
+                          type="text"
+                          value={formData.subject_code}
+                          onChange={(e) => setFormData({...formData, subject_code: e.target.value.toUpperCase()})}
+                          className="form-input"
+                          placeholder="e.g., MATH, ENG, SCI"
+                          maxLength={10}
+                          required
+                        />
+                      </div>
+                      
+                      <div>
+                        <label className="form-label">Subject Name *</label>
+                        <input
+                          type="text"
+                          value={formData.subject_name}
+                          onChange={(e) => setFormData({...formData, subject_name: e.target.value})}
+                          className="form-input"
+                          placeholder="e.g., Mathematics"
+                          required
+                        />
+                      </div>
+                      
+                      <div>
+                        <label className="form-label">Description</label>
+                        <textarea
+                          value={formData.description}
+                          onChange={(e) => setFormData({...formData, description: e.target.value})}
+                          className="form-input"
+                          rows="3"
+                          placeholder="Brief description..."
+                        />
+                      </div>
+
+                      {/* Subject Type - Radio Buttons */}
+                      <div>
+                        <label className="form-label">Subject Type *</label>
+                        <div className="space-y-2">
+                          <label className="flex items-center space-x-2 cursor-pointer">
+                            <input
+                              type="radio"
+                              checked={!formData.is_subsidiary && formData.is_compulsory}
+                              onChange={() => setFormData({...formData, is_compulsory: true, is_subsidiary: false})}
+                              className="form-radio text-blue-600"
+                            />
+                            <span className="text-sm text-gray-700">
+                              <strong>Compulsory</strong> - All S1-S4 students must take this
+                            </span>
+                          </label>
+                          
+                          <label className="flex items-center space-x-2 cursor-pointer">
+                            <input
+                              type="radio"
+                              checked={!formData.is_subsidiary && !formData.is_compulsory}
+                              onChange={() => setFormData({...formData, is_compulsory: false, is_subsidiary: false})}
+                              className="form-radio text-blue-600"
+                            />
+                            <span className="text-sm text-gray-700">
+                              <strong>Optional</strong> - S1-S4 students can choose (max 2)
+                            </span>
+                          </label>
+                          
+                          <label className="flex items-center space-x-2 cursor-pointer">
+                            <input
+                              type="radio"
+                              checked={formData.is_subsidiary}
+                              onChange={() => setFormData({...formData, is_subsidiary: true, is_compulsory: false, applicable_levels: ['S5', 'S6']})}
+                              className="form-radio text-blue-600"
+                            />
+                            <span className="text-sm text-gray-700">
+                              <strong>Subsidiary</strong> - S5/S6 subsidiary subject
+                            </span>
+                          </label>
+                        </div>
+                      </div>
+
+                      {/* Applicable Levels - Only show if not subsidiary */}
+                      {!formData.is_subsidiary && (
+                        <div>
+                          <label className="form-label">Applicable Levels *</label>
+                          <div className="grid grid-cols-3 gap-2">
+                            {['S1', 'S2', 'S3', 'S4', 'S5', 'S6'].map((level) => (
+                              <label key={level} className="flex items-center space-x-2 cursor-pointer">
+                                <input
+                                  type="checkbox"
+                                  checked={formData.applicable_levels.includes(level)}
+                                  onChange={(e) => {
+                                    if (e.target.checked) {
+                                      setFormData({
+                                        ...formData, 
+                                        applicable_levels: [...formData.applicable_levels, level]
+                                      });
+                                    } else {
+                                      setFormData({
+                                        ...formData, 
+                                        applicable_levels: formData.applicable_levels.filter(l => l !== level)
+                                      });
+                                    }
+                                  }}
+                                  className="form-checkbox text-blue-600"
+                                />
+                                <span className="text-sm text-gray-700">{level}</span>
+                              </label>
+                            ))}
+                          </div>
+                          <p className="text-xs text-gray-500 mt-1">Select which class levels offer this subject</p>
+                        </div>
+                      )}
+
+                      {/* Info Boxes */}
+                      {formData.is_compulsory && !formData.is_subsidiary && (
+                        <div className="bg-blue-50 p-3 rounded-lg">
+                          <p className="text-xs text-blue-700">
+                            <strong>Compulsory Subject:</strong> All students in selected levels will automatically be assigned this subject.
+                          </p>
+                        </div>
+                      )}
+
+                      {!formData.is_compulsory && !formData.is_subsidiary && (
+                        <div className="bg-yellow-50 p-3 rounded-lg">
+                          <p className="text-xs text-yellow-700">
+                            <strong>Optional Subject:</strong> Students in selected levels can choose this as one of their 2 optional subjects.
+                          </p>
+                        </div>
+                      )}
+
+                      {formData.is_subsidiary && (
+                        <div className="bg-purple-50 p-3 rounded-lg">
+                          <p className="text-xs text-purple-700">
+                            <strong>Subsidiary Subject:</strong> For S5/S6 students. General Paper is auto-assigned, others chosen by admin.
+                          </p>
+                        </div>
+                      )}
+                    </div>
+
+                    <div className="flex items-center space-x-3 mt-6">
+                      <button type="submit" className="flex-1 bg-blue-600 text-white px-4 py-2 rounded-lg hover:bg-blue-700 transition-colors">
+                        Create Subject
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setShowCreateModal(false);
+                          setFormData({ 
+                            subject_code: '', 
+                            subject_name: '', 
+                            description: '',
+                            is_compulsory: false,
+                            is_subsidiary: false,
+                            applicable_levels: ['S1', 'S2', 'S3', 'S4']
+                          });
+                        }}
+                        className="flex-1 bg-gray-200 text-gray-700 px-4 py-2 rounded-lg hover:bg-gray-300 transition-colors"
+                      >
+                        Cancel
+                      </button>
+                    </div>
+                  </form>
                 </div>
               </div>
-              <div className="flex items-center space-x-3 mt-6">
-                <button type="submit" className="flex-1 bg-blue-600 text-white px-4 py-2 rounded-lg hover:bg-blue-700 transition-colors">
-                  Create Subject
-                </button>
-                <button
-                  type="button"
-                  onClick={() => {
-                    setShowCreateModal(false);
-                    setFormData({ subject_code: '', subject_name: '', description: '' });
-                  }}
-                  className="flex-1 bg-gray-200 text-gray-700 px-4 py-2 rounded-lg hover:bg-gray-300 transition-colors"
-                >
-                  Cancel
-                </button>
-              </div>
-            </form>
-          </div>
-        </div>
-      )}
+            )}
 
       {/* Edit Modal */}
       {showEditModal && selectedSubject && (

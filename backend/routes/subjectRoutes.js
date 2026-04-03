@@ -18,6 +18,9 @@ const {
   addSubjectPaper,         // Add this
   updateSubjectPaper,      // Add this
   deleteSubjectPaper,      // Add this
+  getCompulsorySubjects,   // Add this
+  getOptionalSubjects,     // Add this
+  getSubsidiarySubjects,   // Add this
 } = require('../controllers/subjectController');
 
 const {
@@ -33,14 +36,17 @@ router.get('/', getAllSubjects);
 router.get('/:id', getSubjectById);
 router.get('/:id/teachers', getSubjectTeachers);
 router.get('/:id/competencies', getSubjectCompetencies);
-router.get('/:id/papers', getSubjectPapers);                    // Add this
+router.get('/:id/papers', getSubjectPapers);                    // Added this
+router.get('/compulsory/:level', getCompulsorySubjects);        // Added this
+router.get('/optional/:level', getOptionalSubjects);            // Added this
+router.get('/subsidiaries', getSubsidiarySubjects);             // Added this
 
 // Admin only routes
 router.post('/', authorizeAdmin, createSubject);
 router.put('/:id', authorizeAdmin, updateSubject);
 router.delete('/:id', authorizeAdmin, deleteSubject);
-router.post('/:id/papers', authorizeAdmin, addSubjectPaper);           // Add this
-router.put('/papers/:paperId', authorizeAdmin, updateSubjectPaper);    // Add this
-router.delete('/papers/:paperId', authorizeAdmin, deleteSubjectPaper); // Add this
+router.post('/:id/papers', authorizeAdmin, addSubjectPaper);           // Added this
+router.put('/papers/:paperId', authorizeAdmin, updateSubjectPaper);    // Added this
+router.delete('/papers/:paperId', authorizeAdmin, deleteSubjectPaper); // Added this
 
 module.exports = router;
