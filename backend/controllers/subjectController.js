@@ -246,7 +246,7 @@ const createSubject = async (req, res) => {
 
     // Create subject
     const result = await query(
-      `INSERT INTO subjects (subject_code, subject_name, description, is_compulsory, applicable_levels, is_subsidiary, created_by_user_id)
+      `INSERT INTO subjects (subject_code, subject_name, description, is_compulsory, applicable_levels, is_subsidiary, created_by)
        VALUES ($1, $2, $3, $4, $5, $6, $7)
        RETURNING *`,
       [subject_code, subject_name, description, is_compulsory || false, levels, is_subsidiary || false, createdBy]

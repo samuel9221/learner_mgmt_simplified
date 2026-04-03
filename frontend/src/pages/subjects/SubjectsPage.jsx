@@ -95,14 +95,17 @@ const SubjectsPage = () => {
   };
 
   const openEditModal = (subject) => {
-    setSelectedSubject(subject);
-    setFormData({
-      subject_code: subject.subject_code,
-      subject_name: subject.subject_name,
-      description: subject.description || '',
-    });
-    setShowEditModal(true);
-  };
+  setSelectedSubject(subject);
+  setFormData({
+    subject_code: subject.subject_code,
+    subject_name: subject.subject_name,
+    description: subject.description || '',
+    is_compulsory: subject.is_compulsory || false,
+    is_subsidiary: subject.is_subsidiary || false,
+    applicable_levels: subject.applicable_levels || ['S1', 'S2', 'S3', 'S4'],
+  });
+  setShowEditModal(true);
+};
 
   const handleSearch = () => {
     fetchSubjects();
@@ -175,67 +178,108 @@ const SubjectsPage = () => {
 
       {/* Subjects Grid */}
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-        {subjects.map((subject, index) => {
-          const color = getColorForSubject(index);
-          const colorClasses = getColorClasses(color);
-          
-          return (
-            <div
-              key={subject.id}
-              className={`bg-white rounded-lg shadow-md p-6 border-l-4 hover:shadow-lg transition-shadow ${colorClasses.split(' ').pop()}`}
-            >
-              <div className="flex items-start justify-between mb-4">
-                <div>
+      {subjects.map((subject, index) => {
+        const color = getColorForSubject(index);
+        const colorClasses = getColorClasses(color);
+        
+        return (
+          <div
+            key={subject.id}
+            className={`bg-white rounded-lg shadow-md p-6 border-l-4 hover:shadow-lg transition-shadow ${colorClasses.split(' ').pop()}`}
+          >
+            <div className="flex items-start justify-between mb-4">
+              <div className="flex-1">
+                <div className="flex flex-wrap items-center gap-2 mb-2">
                   <span className={`inline-block px-3 py-1 rounded-full text-xs font-semibold ${colorClasses.split(' ').slice(0, 2).join(' ')}`}>
                     {subject.subject_code}
                   </span>
-                  <h2 className="text-xl font-bold text-gray-900 mt-2">{subject.subject_name}</h2>
-                  {subject.description && (
-                    <p className="text-sm text-gray-600 mt-2 line-clamp-2">{subject.description}</p>
+                  
+                  {/* Type Badges */}
+                  {subject.is_compulsory && (
+                    <span className="inline-flex items-center px-2 py-1 rounded-full text-xs font-medium bg-green-100 text-green-800">
+                      Compulsory
+                    </span>
+                  )}
+                  
+                  {!subject.is_compulsory && !subject.is_subsidiary && (
+                    <span className="inline-flex items-center px-2 py-1 rounded-full text-xs font-medium bg-yellow-100 text-yellow-800">
+                      Optional
+                    </span>
+                  )}
+                  
+                  {subject.is_subsidiary && (
+                    <span className="inline-flex items-center px-2 py-1 rounded-full text-xs font-medium bg-purple-100 text-purple-800">
+                      Subsidiary
+                    </span>
                   )}
                 </div>
-                <div className="flex items-center space-x-2">
-                  <button
-                    onClick={() => openEditModal(subject)}
-                    className="p-2 text-blue-600 hover:bg-blue-50 rounded transition-colors"
-                  >
-                    <FiEdit2 className="w-4 h-4" />
-                  </button>
-                  <button
-                    onClick={() => handleDelete(subject)}
-                    className="p-2 text-red-600 hover:bg-red-50 rounded transition-colors"
-                  >
-                    <FiTrash2 className="w-4 h-4" />
-                  </button>
-                </div>
+                
+                <h2 className="text-xl font-bold text-gray-900 mt-2">{subject.subject_name}</h2>
+                
+                {subject.description && (
+                  <p className="text-sm text-gray-600 mt-2 line-clamp-2">{subject.description}</p>
+                )}
+                
+                {/* Applicable Levels */}
+                {subject.applicable_levels && subject.applicable_levels.length > 0 && (
+                  <div className="flex flex-wrap gap-1 mt-2">
+                    <span className="text-xs text-gray-500">Levels:</span>
+                    {subject.applicable_levels.map((level) => (
+                      <span 
+                        key={level} 
+                        className="inline-block px-2 py-0.5 rounded text-xs bg-gray-100 text-gray-700"
+                      >
+                        {level}
+                      </span>
+                    ))}
+                  </div>
+                )}
               </div>
-
-              <div className="space-y-3">
-                <div className="flex items-center justify-between py-2 border-t border-gray-100">
-                  <span className="text-sm text-gray-600 flex items-center">
-                    <FiUsers className="w-4 h-4 mr-2" />
-                    Teachers
-                  </span>
-                  <span className="font-semibold text-gray-900">{subject.teacher_count || 0}</span>
-                </div>
-
-                <div className="flex items-center justify-between py-2 border-t border-gray-100">
-                  <span className="text-sm text-gray-600 flex items-center">
-                    <FiBook className="w-4 h-4 mr-2" />
-                    Competencies
-                  </span>
-                  <span className="font-semibold text-gray-900">{subject.competency_count || 0}</span>
-                </div>
+              
+              <div className="flex items-center space-x-2 ml-2">
+                <button
+                  onClick={() => openEditModal(subject)}
+                  className="p-2 text-blue-600 hover:bg-blue-50 rounded transition-colors"
+                >
+                  <FiEdit2 className="w-4 h-4" />
+                </button>
+                <button
+                  onClick={() => handleDelete(subject)}
+                  className="p-2 text-red-600 hover:bg-red-50 rounded transition-colors"
+                >
+                  <FiTrash2 className="w-4 h-4" />
+                </button>
               </div>
-              <Link
-                to={`/dashboard/subjects/${subject.id}`}
-                className="mt-4 w-full bg-gray-100 text-gray-700 px-4 py-2 rounded-lg hover:bg-gray-200 transition-colors text-sm block text-center">
-                  View Details
-              </Link>
             </div>
-          );
-        })}
-      </div>
+
+            <div className="space-y-3">
+              <div className="flex items-center justify-between py-2 border-t border-gray-100">
+                <span className="text-sm text-gray-600 flex items-center">
+                  <FiUsers className="w-4 h-4 mr-2" />
+                  Teachers
+                </span>
+                <span className="font-semibold text-gray-900">{subject.teacher_count || 0}</span>
+              </div>
+
+              <div className="flex items-center justify-between py-2 border-t border-gray-100">
+                <span className="text-sm text-gray-600 flex items-center">
+                  <FiBook className="w-4 h-4 mr-2" />
+                  Competencies
+                </span>
+                <span className="font-semibold text-gray-900">{subject.competency_count || 0}</span>
+              </div>
+            </div>
+
+            <Link
+              to={`/dashboard/subjects/${subject.id}`}
+              className="mt-4 w-full bg-gray-100 text-gray-700 px-4 py-2 rounded-lg hover:bg-gray-200 transition-colors text-sm block text-center"
+            >
+              View Details
+            </Link>
+          </div>
+        );
+      })}
+    </div>
 
       {/* Empty State */}
       {subjects.length === 0 && (
@@ -428,9 +472,10 @@ const SubjectsPage = () => {
             )}
 
       {/* Edit Modal */}
+      {/* Edit Modal */}
       {showEditModal && selectedSubject && (
         <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
-          <div className="bg-white rounded-lg p-6 max-w-md w-full">
+          <div className="bg-white rounded-lg p-6 max-w-md w-full max-h-[90vh] overflow-y-auto">
             <h2 className="text-xl font-bold text-gray-900 mb-4">Edit Subject</h2>
             <form onSubmit={handleUpdate}>
               <div className="space-y-4">
@@ -445,16 +490,18 @@ const SubjectsPage = () => {
                     required
                   />
                 </div>
+                
                 <div>
                   <label className="form-label">Subject Name *</label>
                   <input
                     type="text"
-                    value={formData.name}
+                    value={formData.subject_name}
                     onChange={(e) => setFormData({...formData, subject_name: e.target.value})}
                     className="form-input"
                     required
                   />
                 </div>
+                
                 <div>
                   <label className="form-label">Description</label>
                   <textarea
@@ -464,7 +511,83 @@ const SubjectsPage = () => {
                     rows="3"
                   />
                 </div>
+
+                {/* Subject Type - Radio Buttons */}
+                <div>
+                  <label className="form-label">Subject Type *</label>
+                  <div className="space-y-2">
+                    <label className="flex items-center space-x-2 cursor-pointer">
+                      <input
+                        type="radio"
+                        checked={!formData.is_subsidiary && formData.is_compulsory}
+                        onChange={() => setFormData({...formData, is_compulsory: true, is_subsidiary: false})}
+                        className="form-radio text-blue-600"
+                      />
+                      <span className="text-sm text-gray-700">
+                        <strong>Compulsory</strong> - All S1-S4 students must take this
+                      </span>
+                    </label>
+                    
+                    <label className="flex items-center space-x-2 cursor-pointer">
+                      <input
+                        type="radio"
+                        checked={!formData.is_subsidiary && !formData.is_compulsory}
+                        onChange={() => setFormData({...formData, is_compulsory: false, is_subsidiary: false})}
+                        className="form-radio text-blue-600"
+                      />
+                      <span className="text-sm text-gray-700">
+                        <strong>Optional</strong> - S1-S4 students can choose (max 2)
+                      </span>
+                    </label>
+                    
+                    <label className="flex items-center space-x-2 cursor-pointer">
+                      <input
+                        type="radio"
+                        checked={formData.is_subsidiary}
+                        onChange={() => setFormData({...formData, is_subsidiary: true, is_compulsory: false, applicable_levels: ['S5', 'S6']})}
+                        className="form-radio text-blue-600"
+                      />
+                      <span className="text-sm text-gray-700">
+                        <strong>Subsidiary</strong> - S5/S6 subsidiary subject
+                      </span>
+                    </label>
+                  </div>
+                </div>
+
+                {/* Applicable Levels - Only show if not subsidiary */}
+                {!formData.is_subsidiary && (
+                  <div>
+                    <label className="form-label">Applicable Levels *</label>
+                    <div className="grid grid-cols-3 gap-2">
+                      {['S1', 'S2', 'S3', 'S4', 'S5', 'S6'].map((level) => (
+                        <label key={level} className="flex items-center space-x-2 cursor-pointer">
+                          <input
+                            type="checkbox"
+                            checked={formData.applicable_levels?.includes(level)}
+                            onChange={(e) => {
+                              const currentLevels = formData.applicable_levels || [];
+                              if (e.target.checked) {
+                                setFormData({
+                                  ...formData, 
+                                  applicable_levels: [...currentLevels, level]
+                                });
+                              } else {
+                                setFormData({
+                                  ...formData, 
+                                  applicable_levels: currentLevels.filter(l => l !== level)
+                                });
+                              }
+                            }}
+                            className="form-checkbox text-blue-600"
+                          />
+                          <span className="text-sm text-gray-700">{level}</span>
+                        </label>
+                      ))}
+                    </div>
+                  </div>
+                )}
               </div>
+
               <div className="flex items-center space-x-3 mt-6">
                 <button type="submit" className="flex-1 bg-blue-600 text-white px-4 py-2 rounded-lg hover:bg-blue-700 transition-colors">
                   Update Subject

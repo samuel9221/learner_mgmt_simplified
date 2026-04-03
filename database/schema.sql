@@ -783,11 +783,11 @@ ALTER TABLE classes ALTER COLUMN created_by DROP NOT NULL;
 ALTER TABLE classes DROP CONSTRAINT IF EXISTS check_class_teacher_required;
 
 
--- Added new columns to subjects table
+--altering the subjects table to add new columns for compulsory status, subsidiary status, and applicable levels.
 ALTER TABLE subjects 
 ADD COLUMN is_compulsory BOOLEAN DEFAULT FALSE,
-ADD COLUMN applicable_levels VARCHAR(10)[] DEFAULT ARRAY['S1','S2','S3','S4','S5','S6'],
-ADD COLUMN is_subsidiary BOOLEAN DEFAULT FALSE;
+ADD COLUMN is_subsidiary BOOLEAN DEFAULT FALSE,
+ADD COLUMN applicable_levels VARCHAR(50)[] DEFAULT ARRAY['S1','S2','S3','S4','S5','S6'];
 
 -- Create index for faster queries
 CREATE INDEX idx_subjects_is_compulsory ON subjects(is_compulsory);
