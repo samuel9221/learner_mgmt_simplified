@@ -42,9 +42,9 @@ const LoginPage = () => {
   };
 
   // Quick login function for testing
-  const quickLogin = (username) => {
-    handleSubmit(onSubmit)({ username, password: 'password123' });
-  };
+  //const quickLogin = (username) => {
+    //handleSubmit(onSubmit)({ username, password: 'password123' });
+  //};
 
   return (
     <div className="animate-fade-in">
@@ -178,7 +178,7 @@ const LoginPage = () => {
       </form>
 
       {/* Quick Login Buttons for Testing */}
-      <div className="mt-6 p-4 bg-blue-50 border border-blue-200 rounded-lg">
+      {/*<div className="mt-6 p-4 bg-blue-50 border border-blue-200 rounded-lg">
         <p className="text-xs font-semibold text-blue-900 mb-3">
           🧪 Quick Login (Development Mode):
         </p>
@@ -210,7 +210,7 @@ const LoginPage = () => {
             <strong>All passwords:</strong> password123
           </p>
         </div>
-      </div>
+      </div>*/}
     </div>
   );
 };

@@ -139,19 +139,28 @@ const SubjectsPage = () => {
   return (
     <div className="animate-fade-in">
       {/* Header */}
-      <div className="flex items-center justify-between mb-6">
-        <div>
-          <h1 className="text-3xl font-bold text-gray-900">Subjects</h1>
-          <p className="text-gray-600 mt-1">Manage curriculum subjects</p>
+        <div className="flex items-center justify-between mb-6">
+          <div>
+            <h1 className="text-3xl font-bold text-gray-900">Subjects</h1>
+            <p className="text-gray-600 mt-1">Manage curriculum subjects and combinations</p>
+          </div>
+          <div className="flex items-center space-x-3">
+            <Link
+              to="/dashboard/subjects/combinations"
+              className="flex items-center space-x-2 bg-purple-600 text-white px-4 py-2 rounded-lg hover:bg-purple-700 transition-colors"
+            >
+              <FiBook className="w-5 h-5" />
+              <span>Manage Combinations</span>
+            </Link>
+            <button
+              onClick={() => setShowCreateModal(true)}
+              className="flex items-center space-x-2 bg-blue-600 text-white px-4 py-2 rounded-lg hover:bg-blue-700 transition-colors"
+            >
+              <FiPlus className="w-5 h-5" />
+              <span>Add Subject</span>
+            </button>
+          </div>
         </div>
-        <button
-          onClick={() => setShowCreateModal(true)}
-          className="flex items-center space-x-2 bg-blue-600 text-white px-4 py-2 rounded-lg hover:bg-blue-700 transition-colors"
-        >
-          <FiPlus className="w-5 h-5" />
-          <span>Add Subject</span>
-        </button>
-      </div>
 
       {/* Search */}
       <div className="bg-white rounded-lg shadow-md p-4 mb-6">

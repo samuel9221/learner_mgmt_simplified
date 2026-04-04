@@ -44,6 +44,10 @@ app.use('/api/reports', require('./routes/reportRoutes'));
 app.use('/api/analytics', require('./routes/analyticsRoutes'));
 app.use('/api/system', require('./routes/systemRoutes'));
 
+// Routes added for combinations
+app.use('/api/subject-stream-teachers', require('./routes/subjectStreamTeacherRoutes'));
+app.use('/api/subject-combinations', require('./routes/subjectCombinationRoutes')); // Add this
+
 // Added Routes 1
 app.use('/api/classes', require('./routes/classRoutes'));  // Add this line
 

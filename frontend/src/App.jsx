@@ -55,6 +55,9 @@ import SettingsPage from './pages/settings/SettingsPage';
 //pages - subject details pages
 import SubjectDetailPage from './pages/subjects/SubjectDetailPage';
 
+// Pages - Subject Combinations
+import SubjectCombinationsPage from './pages/subjects/SubjectCombinationsPage';
+
 // Protected Route Component
 const ProtectedRoute = ({ children, requiredRole }) => {
   const { isAuthenticated, hasRole } = useAuthStore();
@@ -219,6 +222,31 @@ function App() {
             element={
               <ProtectedRoute requiredRole="admin">
                 <SubjectDetailPage />
+              </ProtectedRoute>
+            } 
+          />
+          {/* Subjects - Admin only added */}
+          <Route 
+            path="subjects" 
+            element={
+              <ProtectedRoute requiredRole="admin">
+                <SubjectsPage />
+              </ProtectedRoute>
+            } 
+          />
+          <Route 
+            path="subjects/:id" 
+            element={
+              <ProtectedRoute requiredRole="admin">
+                <SubjectDetailPage />
+              </ProtectedRoute>
+            } 
+          />
+          <Route 
+            path="subjects/combinations" 
+            element={
+              <ProtectedRoute requiredRole="admin">
+                <SubjectCombinationsPage />
               </ProtectedRoute>
             } 
           />
