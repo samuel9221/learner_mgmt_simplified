@@ -789,6 +789,33 @@ ADD COLUMN is_compulsory BOOLEAN DEFAULT FALSE,
 ADD COLUMN is_subsidiary BOOLEAN DEFAULT FALSE,
 ADD COLUMN applicable_levels VARCHAR(50)[] DEFAULT ARRAY['S1','S2','S3','S4','S5','S6'];
 
+-- Add combination_code column to subject_combinations table
+ALTER TABLE subject_combinations 
+ADD COLUMN combination_code VARCHAR(20) UNIQUE NOT NULL DEFAULT '';
+
+-- Remove the default after adding
+ALTER TABLE subject_combinations 
+ALTER COLUMN combination_code DROP DEFAULT;
+
+-- Add comment
+COMMENT ON COLUMN subject_combinations.combination_code IS 'Short code for the combination (e.g., PCM, PCB, HEL)';
+
+--combination toggle button
+ALTER TABLE subject_combinations 
+ADD COLUMN IF NOT EXISTS is_active BOOLEAN DEFAULT TRUE;
+
+-- Comment
+COMMENT ON COLUMN subject_combinations.is_active IS 'Whether this combination is currently active/available for selection';
+
+--ADDED NEW COLUMN COLUMN
+ALTER TABLE subject_combinations
+ADD COLUMN IF NOT EXISTS updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP;
+-- Verify the column was added
+SELECT column_name, data_type, column_default 
+FROM information_schema.columns 
+WHERE table_name = 'subject_combinations'
+ORDER BY ordinal_position;
+
 -- Create index for faster queries
 CREATE INDEX idx_subjects_is_compulsory ON subjects(is_compulsory);
 CREATE INDEX idx_subjects_is_subsidiary ON subjects(is_subsidiary);
@@ -797,6 +824,63 @@ CREATE INDEX idx_subjects_is_subsidiary ON subjects(is_subsidiary);
 COMMENT ON COLUMN subjects.is_compulsory IS 'For S1-S4: If true, all students must take this subject. If false, it is optional.';
 COMMENT ON COLUMN subjects.applicable_levels IS 'Array of levels where this subject is offered (S1, S2, S3, S4, S5, S6)';
 COMMENT ON COLUMN subjects.is_subsidiary IS 'For S5-S6: If true, this is a subsidiary subject (GP, ICT, Sub Math)';
+
+-- ============================================================================
+-- ADDED MORE COLUMNS TO LEARNERS TABLE
+-- ============================================================================
+
+-- Added guardian and contact columns
+ALTER TABLE learners 
+ADD COLUMN IF NOT EXISTS guardian_name VARCHAR(200),
+ADD COLUMN IF NOT EXISTS guardian_phone VARCHAR(20),
+ADD COLUMN IF NOT EXISTS guardian_email VARCHAR(100),
+ADD COLUMN IF NOT EXISTS guardian_relationship VARCHAR(50),
+ADD COLUMN IF NOT EXISTS phone_number VARCHAR(20),
+ADD COLUMN IF NOT EXISTS email VARCHAR(100),
+ADD COLUMN IF NOT EXISTS address TEXT;
+
+-- Added medical columns
+ALTER TABLE learners 
+ADD COLUMN IF NOT EXISTS medical_conditions TEXT,
+ADD COLUMN IF NOT EXISTS allergies TEXT,
+ADD COLUMN IF NOT EXISTS blood_group VARCHAR(5);
+
+-- Added other useful columns
+ALTER TABLE learners 
+ADD COLUMN IF NOT EXISTS nationality VARCHAR(100) DEFAULT 'Ugandan',
+ADD COLUMN IF NOT EXISTS photo_url TEXT,
+ADD COLUMN IF NOT EXISTS notes TEXT;
+
+-- ============================================================================
+-- ADDED MORE COLUMNS TO LEARNER_ENROLLMENTS TABLE
+-- ============================================================================
+
+-- Added status column
+ALTER TABLE learner_enrollments 
+ADD COLUMN IF NOT EXISTS status VARCHAR(20) DEFAULT 'active' 
+CHECK (status IN ('active', 'completed', 'withdrawn'));
+
+-- ============================================================================
+-- ADDED MORE COLUMNS TO LEARNER_SUBJECTS TABLE
+-- ============================================================================
+
+-- Added columns to track compulsory vs optional
+ALTER TABLE learner_subjects 
+ADD COLUMN IF NOT EXISTS is_compulsory BOOLEAN DEFAULT FALSE,
+ADD COLUMN IF NOT EXISTS assigned_by UUID REFERENCES users(id);
+
+-- Added unique constraint if not exists
+DO $$ 
+BEGIN
+    IF NOT EXISTS (
+        SELECT 1 FROM pg_constraint 
+        WHERE conname = 'unique_learner_subject_year'
+    ) THEN
+        ALTER TABLE learner_subjects 
+        ADD CONSTRAINT unique_learner_subject_year 
+        UNIQUE(learner_id, subject_id, academic_year_id);
+    END IF;
+END $$;
 
 -- ============================================================================
 -- END OF SCHEMA
