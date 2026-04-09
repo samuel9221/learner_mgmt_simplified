@@ -675,24 +675,6 @@ CREATE INDEX idx_subjects_active ON subjects(is_active);
 CREATE INDEX idx_achievement_levels_active ON achievement_levels(is_active);
 
 -- ============================================================================
--- COMMENTS FOR DOCUMENTATION
--- ============================================================================
-
-COMMENT ON TABLE users IS 'System users: Super Admin, Admin, Teachers';
-COMMENT ON TABLE academic_years IS 'Academic years - isolated data per year';
-COMMENT ON TABLE terms IS 'Terms within academic years - max 3 per year';
-COMMENT ON TABLE classes IS 'Classes (S1-S4) - must have class teacher';
-COMMENT ON TABLE streams IS 'Streams within classes - each must have teacher';
-COMMENT ON TABLE subjects IS 'Subjects - cannot exist without subject teacher';
-COMMENT ON TABLE learners IS 'Students - do not have login accounts';
-COMMENT ON TABLE competency_areas IS 'NLSC competency areas per subject';
-COMMENT ON TABLE learning_outcomes IS 'Learning outcomes per competency';
-COMMENT ON TABLE indicators IS 'Performance indicators per learning outcome';
-COMMENT ON TABLE assessments IS 'Individual assessment scores';
-COMMENT ON TABLE competency_assessments IS 'Overall competency achievement levels';
-COMMENT ON TABLE report_cards IS 'Generated report cards per learner per term';
-
--- ============================================================================
 -- ADDITIONAL TABLE IN SCHEMA FOR SUBJECTS, TEACHERS, CLASS & STREAM HANDLING
 -- ============================================================================
 
@@ -804,8 +786,6 @@ COMMENT ON COLUMN subject_combinations.combination_code IS 'Short code for the c
 ALTER TABLE subject_combinations 
 ADD COLUMN IF NOT EXISTS is_active BOOLEAN DEFAULT TRUE;
 
--- Comment
-COMMENT ON COLUMN subject_combinations.is_active IS 'Whether this combination is currently active/available for selection';
 
 --ADDED NEW COLUMN COLUMN
 ALTER TABLE subject_combinations
@@ -820,10 +800,6 @@ ORDER BY ordinal_position;
 CREATE INDEX idx_subjects_is_compulsory ON subjects(is_compulsory);
 CREATE INDEX idx_subjects_is_subsidiary ON subjects(is_subsidiary);
 
--- Add comment for clarity
-COMMENT ON COLUMN subjects.is_compulsory IS 'For S1-S4: If true, all students must take this subject. If false, it is optional.';
-COMMENT ON COLUMN subjects.applicable_levels IS 'Array of levels where this subject is offered (S1, S2, S3, S4, S5, S6)';
-COMMENT ON COLUMN subjects.is_subsidiary IS 'For S5-S6: If true, this is a subsidiary subject (GP, ICT, Sub Math)';
 
 -- ============================================================================
 -- ADDED MORE COLUMNS TO LEARNERS TABLE
@@ -881,6 +857,30 @@ BEGIN
         UNIQUE(learner_id, subject_id, academic_year_id);
     END IF;
 END $$;
+
+-- ============================================================================
+-- COMMENTS FOR DOCUMENTATION
+-- ============================================================================
+-- on columns
+COMMENT ON COLUMN subjects.is_compulsory IS 'For S1-S4: If true, all students must take this subject. If false, it is optional.';
+COMMENT ON COLUMN subjects.applicable_levels IS 'Array of levels where this subject is offered (S1, S2, S3, S4, S5, S6)';
+COMMENT ON COLUMN subjects.is_subsidiary IS 'For S5-S6: If true, this is a subsidiary subject (GP, ICT, Sub Math)';
+COMMENT ON COLUMN subject_combinations.is_active IS 'Whether this combination is currently active/available for selection';
+
+--on tables
+COMMENT ON TABLE users IS 'System users: Super Admin, Admin, Teachers';
+COMMENT ON TABLE academic_years IS 'Academic years - isolated data per year';
+COMMENT ON TABLE terms IS 'Terms within academic years - max 3 per year';
+COMMENT ON TABLE classes IS 'Classes (S1-S4) - must have class teacher';
+COMMENT ON TABLE streams IS 'Streams within classes - each must have teacher';
+COMMENT ON TABLE subjects IS 'Subjects - cannot exist without subject teacher';
+COMMENT ON TABLE learners IS 'Students - do not have login accounts';
+COMMENT ON TABLE competency_areas IS 'NLSC competency areas per subject';
+COMMENT ON TABLE learning_outcomes IS 'Learning outcomes per competency';
+COMMENT ON TABLE indicators IS 'Performance indicators per learning outcome';
+COMMENT ON TABLE assessments IS 'Individual assessment scores';
+COMMENT ON TABLE competency_assessments IS 'Overall competency achievement levels';
+COMMENT ON TABLE report_cards IS 'Generated report cards per learner per term';
 
 -- ============================================================================
 -- END OF SCHEMA
