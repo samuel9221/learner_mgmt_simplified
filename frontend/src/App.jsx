@@ -58,6 +58,10 @@ import SubjectDetailPage from './pages/subjects/SubjectDetailPage';
 // Pages - Subject Combinations
 import SubjectCombinationsPage from './pages/subjects/SubjectCombinationsPage';
 
+import AdmitLearnerPage from './pages/learners/AdmitLearnerPage';
+
+import EditLearnerPage from './pages/learners/EditLearnerPage';
+
 // Protected Route Component
 const ProtectedRoute = ({ children, requiredRole }) => {
   const { isAuthenticated, hasRole } = useAuthStore();
@@ -254,6 +258,40 @@ function App() {
           {/* Learners - All Roles */}
           <Route path="learners" element={<LearnersPage />} />
           <Route path="learners/:id" element={<LearnerDetailPage />} />
+          
+          {/* Learners - All roles can view, Admin can manage */}
+          <Route 
+            path="learners" 
+            element={
+              <ProtectedRoute>
+                <LearnersPage />
+              </ProtectedRoute>
+            } 
+          />
+          <Route 
+            path="learners/admit" 
+            element={
+              <ProtectedRoute requiredRole="admin">
+                <AdmitLearnerPage />
+              </ProtectedRoute>
+            } 
+          />
+          <Route 
+            path="learners/:id" 
+            element={
+              <ProtectedRoute>
+                <LearnerDetailPage />
+              </ProtectedRoute>
+            } 
+          />
+          <Route 
+            path="learners/:id/edit" 
+            element={
+              <ProtectedRoute requiredRole="admin">
+                <EditLearnerPage />
+              </ProtectedRoute>
+            } 
+          />
           
           {/* Assessments - All Roles */}
           <Route path="assessments" element={<AssessmentsPage />} />

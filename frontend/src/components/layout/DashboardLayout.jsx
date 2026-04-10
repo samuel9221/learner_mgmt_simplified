@@ -91,6 +91,11 @@ const DashboardLayout = () => {
       icon: FiSettings,
       roles: ['super_admin', 'admin', 'teacher'],
     },
+    { name: 'Learners', 
+      path: '/dashboard/learners', 
+      icon: FiUsers, 
+      roles: ['super_admin', 'admin', 'teacher'] 
+    },
   ];
 
   const visibleNavItems = navigationItems.filter((item) =>

@@ -23,14 +23,17 @@ const {
 // All routes require authentication
 router.use(authenticate);
 
+// IMPORTANT: Specific routes BEFORE dynamic routes
 // Public (authenticated) routes
 router.get('/', getAllLearners);
-router.get('/:id', getLearnerById);
 
-// Admin only routes
-router.post('/', authorizeAdmin, admitLearner);
-router.put('/:id', authorizeAdmin, updateLearner);
-router.post('/:id/enroll', authorizeAdmin, enrollLearner);
-router.delete('/:id', authorizeAdmin, deleteLearner);
+// Admin only routes - SPECIFIC ROUTES FIRST
+router.post('/', authorizeAdmin, admitLearner);              // POST /api/learners (create)
+router.post('/:id/enroll', authorizeAdmin, enrollLearner);  // Specific route with /enroll
+
+// Dynamic routes - AFTER specific routes
+router.get('/:id', getLearnerById);                          // GET /api/learners/:id
+router.put('/:id', authorizeAdmin, updateLearner);          // PUT /api/learners/:id
+router.delete('/:id', authorizeAdmin, deleteLearner);       // DELETE /api/learners/:id
 
 module.exports = router;
