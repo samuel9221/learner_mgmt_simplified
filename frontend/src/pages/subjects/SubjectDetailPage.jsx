@@ -139,7 +139,8 @@ const SubjectDetailPage = () => {
 
       {/* Header */}
       <div className="bg-white rounded-lg shadow-md p-6 mb-6">
-        <div className="flex items-start justify-between">
+        {/* In the header section, add this button */}
+        <div className="flex items-center justify-between mb-6">
           <div>
             <div className="flex items-center space-x-3 mb-2">
               <span className="inline-block px-3 py-1 rounded-full text-xs font-semibold bg-blue-100 text-blue-800">
@@ -151,6 +152,15 @@ const SubjectDetailPage = () => {
               <p className="text-gray-600 mt-2">{subject.description}</p>
             )}
           </div>
+          
+          {/* Add this button */}
+          <Link
+            to={`/dashboard/subjects/${id}/competencies`}
+            className="flex items-center space-x-2 bg-purple-600 text-white px-4 py-2 rounded-lg hover:bg-purple-700 transition-colors"
+          >
+            <FiBook className="w-5 h-5" />
+            <span>Manage Competencies</span>
+          </Link>
         </div>
 
         {/* Statistics */}

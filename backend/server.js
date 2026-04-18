@@ -48,6 +48,7 @@ app.use('/api/system', require('./routes/systemRoutes'));
 app.use('/api/subject-stream-teachers', require('./routes/subjectStreamTeacherRoutes'));
 app.use('/api/subject-combinations', require('./routes/subjectCombinationRoutes')); // Add this
 app.use('/api/learners', require('./routes/learnerRoutes')); // Added this
+app.use('/api/competencies', require('./routes/competencyRoutes'));// added for competencies
 
 // Added Routes 1
 app.use('/api/classes', require('./routes/classRoutes'));  // Add this line
