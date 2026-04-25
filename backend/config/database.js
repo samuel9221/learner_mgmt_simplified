@@ -9,7 +9,7 @@ const { Pool } = require('pg');
 const dbConfig = {
   host: process.env.DB_HOST || 'localhost',
   port: parseInt(process.env.DB_PORT) || 5432,
-  database: process.env.DB_NAME || 'school_mgmt_system',
+  database: process.env.DB_NAME || 'school_mgmt_system_1',
   user: process.env.DB_USER || 'localhost',
   password: process.env.DB_PASSWORD,
   max: parseInt(process.env.DB_MAX_CONNECTIONS) || 20,

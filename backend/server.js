@@ -39,7 +39,6 @@ app.use('/api/classes', require('./routes/classRoutes'));
 app.use('/api/streams', require('./routes/streamRoutes'));
 app.use('/api/subjects', require('./routes/subjectRoutes'));
 app.use('/api/learners', require('./routes/learnerRoutes'));
-app.use('/api/assessments', require('./routes/assessmentRoutes'));
 app.use('/api/reports', require('./routes/reportRoutes'));
 app.use('/api/analytics', require('./routes/analyticsRoutes'));
 app.use('/api/system', require('./routes/systemRoutes'));
@@ -47,11 +46,40 @@ app.use('/api/system', require('./routes/systemRoutes'));
 // Routes added for combinations
 app.use('/api/subject-stream-teachers', require('./routes/subjectStreamTeacherRoutes'));
 app.use('/api/subject-combinations', require('./routes/subjectCombinationRoutes')); // Add this
-app.use('/api/learners', require('./routes/learnerRoutes')); // Added this
-app.use('/api/competencies', require('./routes/competencyRoutes'));// added for competencies
+
+
+//new routes
+// ============================================================
+// ADD THESE LINES TO YOUR EXISTING app.js / server.js
+// alongside your other route registrations
+// ============================================================
+
+const gradingScalesRoutes = require('./routes/gradingScales.routes');
+const examSessionsRoutes  = require('./routes/examSessions.routes');
+const examResultsRoutes   = require('./routes/examResults.routes');
+const finalResultsRoutes  = require('./routes/finalResults.routes');
+const analysisRoutes      = require('./routes/analysis.routes');
+const reportsRoutes       = require('./routes/reports.routes');
+
+
+// testing routes
+console.log('gradingScales:', typeof gradingScalesRoutes);
+console.log('examSessions:', typeof examSessionsRoutes);
+console.log('examResults:', typeof examResultsRoutes);
+console.log('finalResults:', typeof finalResultsRoutes);
+console.log('analysis:', typeof analysisRoutes);
+console.log('reports:', typeof reportsRoutes);
+
+// Mount routes
+app.use('/api/grading-scales', gradingScalesRoutes);
+app.use('/api/exam-sessions',  examSessionsRoutes);
+app.use('/api/exam-results',   examResultsRoutes);
+app.use('/api/final-results',  finalResultsRoutes);
+app.use('/api/analysis',       analysisRoutes);
+app.use('/api/reports',        reportsRoutes);
 
 // Added Routes 1
-app.use('/api/classes', require('./routes/classRoutes'));  // Add this line
+
 
 //More routes
 app.use('/api/subject-stream-teachers', require('./routes/subjectStreamTeacherRoutes')); // Add this
@@ -73,10 +101,10 @@ const startServer = async () => {
     const server = app.listen(PORT, () => {
       console.log(`
 ╔════════════════════════════════════════════════════════════════╗
-║   Uganda NLSC School Management System                         ║
+║   School Management System                                     ║
 ║   Backend Server Started Successfully                          ║
 ║                                                                ║
-║   Port:        ${PORT}                                              ║
+║   Port:        ${PORT}                                           ║
 ║   Database:    Connected Successfully!                         ║
 ╚════════════════════════════════════════════════════════════════╝
       `);

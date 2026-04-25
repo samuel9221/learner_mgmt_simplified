@@ -152,15 +152,6 @@ const SubjectDetailPage = () => {
               <p className="text-gray-600 mt-2">{subject.description}</p>
             )}
           </div>
-          
-          {/* Add this button */}
-          <Link
-            to={`/dashboard/subjects/${id}/competencies`}
-            className="flex items-center space-x-2 bg-purple-600 text-white px-4 py-2 rounded-lg hover:bg-purple-700 transition-colors"
-          >
-            <FiBook className="w-5 h-5" />
-            <span>Manage Competencies</span>
-          </Link>
         </div>
 
         {/* Statistics */}
@@ -172,10 +163,6 @@ const SubjectDetailPage = () => {
           <div className="p-4 bg-green-50 rounded-lg">
             <p className="text-sm text-gray-600">Teachers</p>
             <p className="text-2xl font-bold text-gray-900">{subject.teacher_count || 0}</p>
-          </div>
-          <div className="p-4 bg-purple-50 rounded-lg">
-            <p className="text-sm text-gray-600">Competencies</p>
-            <p className="text-2xl font-bold text-gray-900">{subject.competency_count || 0}</p>
           </div>
         </div>
       </div>

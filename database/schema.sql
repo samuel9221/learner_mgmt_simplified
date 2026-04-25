@@ -15,9 +15,7 @@ CREATE TYPE user_role AS ENUM ('super_admin', 'admin', 'teacher');
 CREATE TYPE gender_type AS ENUM ('male', 'female');
 CREATE TYPE learner_status AS ENUM ('active', 'repeated', 'transferred', 'completed');
 CREATE TYPE term_number AS ENUM ('1', '2', '3');
-CREATE TYPE achievement_level AS ENUM ('A', 'B', 'C', 'D');
 CREATE TYPE promotion_status AS ENUM ('progressed', 'progressed_with_support', 'repeated', 'completed');
-CREATE TYPE assessment_status AS ENUM ('pending', 'approved', 'locked');
 
 -- ============================================================================
 -- USER MANAGEMENT & AUTHENTICATION
@@ -85,31 +83,6 @@ CREATE TABLE terms (
 CREATE INDEX idx_terms_current ON terms(is_current) WHERE is_current = TRUE;
 
 -- ============================================================================
--- COMPETENCY GRADING CONFIGURATION
--- ============================================================================
-
--- Achievement Levels (Configurable descriptors)
-CREATE TABLE achievement_levels (
-    id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
-    level_code achievement_level UNIQUE NOT NULL,
-    level_name VARCHAR(50) NOT NULL, -- e.g., "Exceeds Expectations"
-    description TEXT,
-    min_score NUMERIC(5,2) NOT NULL,
-    max_score NUMERIC(5,2) NOT NULL,
-    is_active BOOLEAN DEFAULT TRUE,
-    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-    CONSTRAINT check_score_range CHECK (min_score >= 0 AND max_score <= 100 AND min_score < max_score)
-);
-
--- Default achievement levels
-INSERT INTO achievement_levels (level_code, level_name, description, min_score, max_score) VALUES
-    ('A', 'Exceeds Expectations', 'Level 4: Learner demonstrates outstanding mastery', 80, 100),
-    ('B', 'Meets Expectations', 'Level 3: Learner demonstrates adequate mastery', 65, 79.99),
-    ('C', 'Approaching Expectations', 'Level 2: Learner demonstrates developing mastery', 50, 64.99),
-    ('D', 'Below Expectations', 'Level 1: Learner requires significant support', 0, 49.99);
-
--- ============================================================================
 -- CLASSES & STREAMS
 -- ============================================================================
 
@@ -151,39 +124,6 @@ CREATE TABLE subjects (
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
-
--- Competency Areas (per subject)
-CREATE TABLE competency_areas (
-    id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
-    subject_id UUID NOT NULL REFERENCES subjects(id) ON DELETE CASCADE,
-    competency_name VARCHAR(255) NOT NULL,
-    description TEXT,
-    order_number INTEGER NOT NULL,
-    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-    UNIQUE (subject_id, competency_name)
-);
-
--- Learning Outcomes (per competency)
-CREATE TABLE learning_outcomes (
-    id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
-    competency_area_id UUID NOT NULL REFERENCES competency_areas(id) ON DELETE CASCADE,
-    outcome_description TEXT NOT NULL,
-    order_number INTEGER NOT NULL,
-    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-);
-
--- Indicators (per learning outcome)
-CREATE TABLE indicators (
-    id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
-    learning_outcome_id UUID NOT NULL REFERENCES learning_outcomes(id) ON DELETE CASCADE,
-    indicator_description TEXT NOT NULL,
-    order_number INTEGER NOT NULL,
-    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-);
-
 -- ============================================================================
 -- SUBJECT ASSIGNMENTS
 -- ============================================================================
@@ -243,79 +183,6 @@ CREATE TABLE learner_enrollments (
 CREATE INDEX idx_learner_enrollments_learner ON learner_enrollments(learner_id);
 CREATE INDEX idx_learner_enrollments_class ON learner_enrollments(class_id);
 CREATE INDEX idx_learner_enrollments_stream ON learner_enrollments(stream_id);
-
--- ============================================================================
--- ASSESSMENT CONFIGURATION
--- ============================================================================
-
--- Assessment Components (per subject, per term)
-CREATE TABLE assessment_components (
-    id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
-    subject_id UUID NOT NULL REFERENCES subjects(id) ON DELETE CASCADE,
-    term_id UUID NOT NULL REFERENCES terms(id) ON DELETE CASCADE,
-    component_name VARCHAR(100) NOT NULL, -- e.g., "Continuous Assessment", "Project Work", "End of Term"
-    component_code VARCHAR(20) NOT NULL,
-    weight_percentage NUMERIC(5,2) NOT NULL, -- Must total 100% per subject per term
-    max_score NUMERIC(5,2) NOT NULL DEFAULT 100,
-    description TEXT,
-    created_by UUID NOT NULL REFERENCES users(id),
-    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-    UNIQUE (subject_id, term_id, component_code),
-    CONSTRAINT check_weight CHECK (weight_percentage > 0 AND weight_percentage <= 100),
-    CONSTRAINT check_max_score CHECK (max_score > 0)
-);
-
--- Index for assessment queries
-CREATE INDEX idx_assessment_components_subject_term ON assessment_components(subject_id, term_id);
-
--- ============================================================================
--- ASSESSMENTS & SCORES
--- ============================================================================
-
--- Assessment Records
-CREATE TABLE assessments (
-    id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
-    learner_id UUID NOT NULL REFERENCES learners(id) ON DELETE CASCADE,
-    subject_id UUID NOT NULL REFERENCES subjects(id) ON DELETE CASCADE,
-    component_id UUID NOT NULL REFERENCES assessment_components(id) ON DELETE CASCADE,
-    term_id UUID NOT NULL REFERENCES terms(id) ON DELETE CASCADE,
-    score NUMERIC(5,2),
-    is_absent BOOLEAN DEFAULT FALSE,
-    is_not_done BOOLEAN DEFAULT FALSE, -- Allows report generation even if assessment missing
-    teacher_id UUID NOT NULL REFERENCES users(id),
-    status assessment_status DEFAULT 'pending',
-    remarks TEXT,
-    assessed_date DATE DEFAULT CURRENT_DATE,
-    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-    UNIQUE (learner_id, component_id, term_id),
-    CONSTRAINT check_score_valid CHECK (
-        (score IS NULL AND (is_absent = TRUE OR is_not_done = TRUE)) OR
-        (score IS NOT NULL AND score >= 0)
-    )
-);
-
--- Competency Assessments (per learner, per competency, per term)
-CREATE TABLE competency_assessments (
-    id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
-    learner_id UUID NOT NULL REFERENCES learners(id) ON DELETE CASCADE,
-    competency_area_id UUID NOT NULL REFERENCES competency_areas(id) ON DELETE CASCADE,
-    term_id UUID NOT NULL REFERENCES terms(id) ON DELETE CASCADE,
-    achievement_level achievement_level NOT NULL,
-    overall_score NUMERIC(5,2), -- Calculated from assessments
-    teacher_observation TEXT,
-    teacher_id UUID NOT NULL REFERENCES users(id),
-    assessed_date DATE DEFAULT CURRENT_DATE,
-    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-    UNIQUE (learner_id, competency_area_id, term_id)
-);
-
--- Index for assessment queries
-CREATE INDEX idx_assessments_learner_term ON assessments(learner_id, term_id);
-CREATE INDEX idx_assessments_subject ON assessments(subject_id);
-CREATE INDEX idx_competency_assessments_learner ON competency_assessments(learner_id);
 
 -- ============================================================================
 -- REPORT CARDS
@@ -396,7 +263,7 @@ INSERT INTO system_config (config_key, config_value, description) VALUES
     ('school_email', 'Email Address', 'Contact email'),
     ('admission_number_prefix', 'STD', 'Prefix for admission numbers'),
     ('current_academic_year', '', 'Current academic year ID'),
-    ('allow_assessment_editing', 'true', 'Allow teachers to edit submitted assessments');
+    ('report_card_template', '', 'Default report card template ID');
 
 -- ============================================================================
 -- AUDIT LOG
@@ -454,9 +321,6 @@ CREATE TRIGGER update_subjects_updated_at BEFORE UPDATE ON subjects
 CREATE TRIGGER update_learners_updated_at BEFORE UPDATE ON learners
     FOR EACH ROW EXECUTE FUNCTION update_updated_at_column();
 
-CREATE TRIGGER update_assessments_updated_at BEFORE UPDATE ON assessments
-    FOR EACH ROW EXECUTE FUNCTION update_updated_at_column();
-
 CREATE TRIGGER update_report_cards_updated_at BEFORE UPDATE ON report_cards
     FOR EACH ROW EXECUTE FUNCTION update_updated_at_column();
 
@@ -496,30 +360,6 @@ CREATE TRIGGER trigger_single_current_term
     WHEN (NEW.is_current = TRUE)
     EXECUTE FUNCTION ensure_single_current_term();
 
--- Trigger to validate assessment component weights total 100%
-CREATE OR REPLACE FUNCTION validate_assessment_weights()
-RETURNS TRIGGER AS $$
-DECLARE
-    total_weight NUMERIC;
-BEGIN
-    SELECT COALESCE(SUM(weight_percentage), 0) INTO total_weight
-    FROM assessment_components
-    WHERE subject_id = NEW.subject_id 
-    AND term_id = NEW.term_id
-    AND id != COALESCE(NEW.id, '00000000-0000-0000-0000-000000000000'::UUID);
-    
-    IF (total_weight + NEW.weight_percentage) > 100 THEN
-        RAISE EXCEPTION 'Total assessment weight cannot exceed 100%% for subject and term';
-    END IF;
-    
-    RETURN NEW;
-END;
-$$ LANGUAGE plpgsql;
-
-CREATE TRIGGER trigger_validate_assessment_weights
-    BEFORE INSERT OR UPDATE ON assessment_components
-    FOR EACH ROW
-    EXECUTE FUNCTION validate_assessment_weights();
 
 -- Trigger to prevent more than 3 terms per academic year
 CREATE OR REPLACE FUNCTION validate_term_limit()
@@ -586,83 +426,9 @@ LEFT JOIN streams s ON st.stream_id = s.id
 JOIN academic_years ay ON st.academic_year_id = ay.id
 WHERE ay.is_current = TRUE;
 
--- View: Learner Performance Summary
-CREATE OR REPLACE VIEW v_learner_performance AS
-SELECT 
-    l.id AS learner_id,
-    l.admission_number,
-    l.first_name || ' ' || l.last_name AS learner_name,
-    sub.subject_name,
-    t.term_number,
-    ca.achievement_level,
-    ca.overall_score,
-    ca.teacher_observation
-FROM learners l
-JOIN competency_assessments ca ON l.id = ca.learner_id
-JOIN competency_areas comp ON ca.competency_area_id = comp.id
-JOIN subjects sub ON comp.subject_id = sub.id
-JOIN terms t ON ca.term_id = t.id
-ORDER BY l.admission_number, sub.subject_name, t.term_number;
-
 -- ============================================================================
 -- FUNCTIONS FOR BUSINESS LOGIC
 -- ============================================================================
-
--- Function to calculate overall achievement level from score
-CREATE OR REPLACE FUNCTION get_achievement_level(score NUMERIC)
-RETURNS achievement_level AS $$
-DECLARE
-    level achievement_level;
-BEGIN
-    SELECT level_code INTO level
-    FROM achievement_levels
-    WHERE score >= min_score AND score <= max_score AND is_active = TRUE
-    LIMIT 1;
-    
-    RETURN level;
-END;
-$$ LANGUAGE plpgsql;
-
--- Function to check if report can be generated
-CREATE OR REPLACE FUNCTION can_generate_report(
-    p_learner_id UUID,
-    p_term_id UUID
-) RETURNS BOOLEAN AS $$
-DECLARE
-    required_assessments INTEGER;
-    completed_assessments INTEGER;
-    missing_unmarked INTEGER;
-BEGIN
-    -- Get count of required assessment components for learner's subjects
-    SELECT COUNT(DISTINCT ac.id) INTO required_assessments
-    FROM assessment_components ac
-    JOIN subject_teachers st ON ac.subject_id = st.subject_id
-    JOIN learner_enrollments le ON st.class_id = le.class_id 
-        AND (st.stream_id = le.stream_id OR st.stream_id IS NULL)
-    WHERE le.learner_id = p_learner_id
-    AND ac.term_id = p_term_id;
-    
-    -- Get count of completed assessments
-    SELECT COUNT(*) INTO completed_assessments
-    FROM assessments a
-    WHERE a.learner_id = p_learner_id
-    AND a.term_id = p_term_id
-    AND (a.score IS NOT NULL OR a.is_not_done = TRUE OR a.is_absent = TRUE);
-    
-    -- Check for missing assessments that are not marked as "not done"
-    SELECT COUNT(*) INTO missing_unmarked
-    FROM assessment_components ac
-    WHERE ac.term_id = p_term_id
-    AND NOT EXISTS (
-        SELECT 1 FROM assessments a
-        WHERE a.component_id = ac.id
-        AND a.learner_id = p_learner_id
-    );
-    
-    -- Report can be generated if all assessments are accounted for
-    RETURN (completed_assessments >= required_assessments) OR (missing_unmarked = 0);
-END;
-$$ LANGUAGE plpgsql;
 
 -- ============================================================================
 -- INDEXES FOR PERFORMANCE
@@ -858,186 +624,140 @@ BEGIN
     END IF;
 END $$;
 
--- ============================================================================
--- ADDED SCORE COLUMN TO ASSESSMENT_COMPONENTS
--- ============================================================================
-
--- Add score column
-ALTER TABLE assessment_components 
-ADD COLUMN IF NOT EXISTS score NUMERIC DEFAULT 0;
-
--- Add constraint to ensure score is 0-3
-ALTER TABLE assessment_components 
-DROP CONSTRAINT IF EXISTS check_score_range;
-
-ALTER TABLE assessment_components 
-ADD CONSTRAINT check_score_range 
-CHECK (score >= 0 AND score <= 3);
-
--- Add comment
-COMMENT ON COLUMN assessment_components.score IS 'Score on scale of 3: 0=Not Assessed, 1=Beginning, 2=Developing, 3=Competent';
-
 
 -- ============================================================================
--- SCHEMA ADJUSTMENTS BASED ON YOUR EXISTING STRUCTURE
+-- STEP 1: PATCH report_card_subjects (remove achievement_level ENUM column)
 -- ============================================================================
 
--- ============================================================================
--- 1. RENAME "indicators" to "competencies" (or keep as is)
--- ============================================================================
--- Your "indicators" table is actually the competencies table
--- We can either:
--- A) Rename it to "competencies" for clarity
--- B) Keep it as "indicators" and just use that name in code
-
--- Option A: Rename (recommended for clarity)
-ALTER TABLE indicators RENAME TO competencies;
-
--- If you renamed it, also rename the foreign key column in assessment_components
--- (Skip this if you want to keep "indicators" name)
+ALTER TABLE report_card_subjects
+    DROP COLUMN IF EXISTS overall_achievement,
+    ADD COLUMN IF NOT EXISTS grade VARCHAR(5),
+    ADD COLUMN IF NOT EXISTS mid_term_score NUMERIC(5,2),
+    ADD COLUMN IF NOT EXISTS end_term_score NUMERIC(5,2),
+    ADD COLUMN IF NOT EXISTS final_score NUMERIC(5,2);
 
 -- ============================================================================
--- 2. ADD MISSING COLUMNS TO ASSESSMENT_COMPONENTS
+-- STEP 2: CREATE NEW TABLES
 -- ============================================================================
 
--- Add competency_id (links to indicators/competencies)
-ALTER TABLE assessment_components 
-ADD COLUMN IF NOT EXISTS competency_id UUID REFERENCES competencies(id) ON DELETE CASCADE;
-
--- Add assessment_id (links back to parent assessment)
-ALTER TABLE assessment_components 
-ADD COLUMN IF NOT EXISTS assessment_id UUID REFERENCES assessments(id) ON DELETE CASCADE;
-
--- Add academic_year_id for historical tracking
-ALTER TABLE assessment_components 
-ADD COLUMN IF NOT EXISTS academic_year_id UUID REFERENCES academic_years(id);
-
--- Add stream_id to know which class was assessed
-ALTER TABLE assessment_components 
-ADD COLUMN IF NOT EXISTS stream_id UUID REFERENCES streams(id);
-
--- Rename component_id to make it clearer (optional)
--- component_id seems to reference the assessment itself, so this might be redundant with assessment_id
-
--- Add indexes for performance
-CREATE INDEX IF NOT EXISTS idx_assessment_components_competency ON assessment_components(competency_id);
-CREATE INDEX IF NOT EXISTS idx_assessment_components_assessment ON assessment_components(assessment_id);
-CREATE INDEX IF NOT EXISTS idx_assessment_components_stream ON assessment_components(stream_id);
-
--- ============================================================================
--- 3. ADD MISSING COLUMNS TO ASSESSMENTS
--- ============================================================================
-
--- Add stream_id (which class is being assessed)
-ALTER TABLE assessments 
-ADD COLUMN IF NOT EXISTS stream_id UUID REFERENCES streams(id);
-
--- Add academic_year_id
-ALTER TABLE assessments 
-ADD COLUMN IF NOT EXISTS academic_year_id UUID REFERENCES academic_years(id);
-
--- Add assessment_type to distinguish competency-based vs EOT exams
-ALTER TABLE assessments 
-ADD COLUMN IF NOT EXISTS assessment_type VARCHAR(50) DEFAULT 'competency'
-CHECK (assessment_type IN ('competency', 'eot', 'both'));
-
--- Add competency_area_id (optional: if assessing entire area)
-ALTER TABLE assessments 
-ADD COLUMN IF NOT EXISTS competency_area_id UUID REFERENCES competency_areas(id);
-
--- Ensure status column exists with proper type
-DO $$ 
-BEGIN
-    IF NOT EXISTS (
-        SELECT 1 FROM information_schema.columns
-        WHERE table_name = 'assessments' AND column_name = 'status'
-    ) THEN
-        ALTER TABLE assessments 
-        ADD COLUMN status VARCHAR(20) DEFAULT 'draft'
-        CHECK (status IN ('draft', 'published', 'locked'));
-    END IF;
-END $$;
-
--- Add indexes
-CREATE INDEX IF NOT EXISTS idx_assessments_stream ON assessments(stream_id);
-CREATE INDEX IF NOT EXISTS idx_assessments_academic_year ON assessments(academic_year_id);
-CREATE INDEX IF NOT EXISTS idx_assessments_type ON assessments(assessment_type);
-
--- ============================================================================
--- 4. CREATE ASSESSMENT_COMPETENCIES JUNCTION TABLE
--- ============================================================================
--- This links which specific competencies are being assessed in an assessment
-
-CREATE TABLE IF NOT EXISTS assessment_competencies (
+-- 1. Grading Scales (admin configurable)
+CREATE TABLE grading_scales (
     id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
-    assessment_id UUID NOT NULL REFERENCES assessments(id) ON DELETE CASCADE,
-    competency_id UUID NOT NULL REFERENCES competencies(id) ON DELETE CASCADE,
-    weight INTEGER DEFAULT 1,
+    label VARCHAR(5) NOT NULL,
+    grade_name VARCHAR(50) NOT NULL,
+    min_score NUMERIC(5,2) NOT NULL,
+    max_score NUMERIC(5,2) NOT NULL,
+    remarks TEXT,
+    color_code VARCHAR(10),
+    is_active BOOLEAN DEFAULT TRUE,
+    created_by UUID REFERENCES users(id),
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-    CONSTRAINT unique_assessment_competency UNIQUE(assessment_id, competency_id)
+    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    CONSTRAINT check_grading_score_range CHECK (
+        min_score >= 0 AND max_score <= 100 AND min_score < max_score
+    )
 );
 
-CREATE INDEX IF NOT EXISTS idx_assessment_competencies_assessment ON assessment_competencies(assessment_id);
-CREATE INDEX IF NOT EXISTS idx_assessment_competencies_competency ON assessment_competencies(competency_id);
+-- Default grading scale
+INSERT INTO grading_scales (label, grade_name, min_score, max_score, remarks, color_code) VALUES
+    ('A', 'Exceptional',        80,  100,  'Exceptional performance',        '#22c55e'),
+    ('B', 'Outstanding',        65,  79.99,'Outstanding performance',      '#3b82f6'),
+    ('C', 'Satisfactory',       50,  64.99,'Average performance',            '#f59e0b'),
+    ('D', 'Basic',      		30,  49.99,'More effort needed',  '#ef4444'),
+	('E', 'Elementary',       0,  29.99,'Needs significant improvement',  '#ff2c2c');
 
-COMMENT ON TABLE assessment_competencies IS 'Links assessments to specific competencies being assessed';
+-- 2. Exam Sessions (Mid Term / End of Term per term)
+CREATE TYPE exam_type AS ENUM ('mid_term', 'end_of_term');
+
+CREATE TABLE exam_sessions (
+    id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+    term_id UUID NOT NULL REFERENCES terms(id) ON DELETE CASCADE,
+    exam_type exam_type NOT NULL,
+    start_date DATE,
+    end_date DATE,
+    is_active BOOLEAN DEFAULT TRUE,
+    created_by UUID NOT NULL REFERENCES users(id),
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    UNIQUE (term_id, exam_type)
+);
+
+-- 3. Exam Results (individual scores per learner per subject)
+CREATE TABLE exam_results (
+    id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+    learner_id UUID NOT NULL REFERENCES learners(id) ON DELETE CASCADE,
+    subject_id UUID NOT NULL REFERENCES subjects(id) ON DELETE CASCADE,
+    stream_id UUID REFERENCES streams(id),
+    exam_session_id UUID NOT NULL REFERENCES exam_sessions(id) ON DELETE CASCADE,
+    score NUMERIC(5,2),
+    is_absent BOOLEAN DEFAULT FALSE,
+    teacher_id UUID NOT NULL REFERENCES users(id),
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    UNIQUE (learner_id, subject_id, exam_session_id),
+    CONSTRAINT check_exam_score CHECK (
+        (score IS NULL AND is_absent = TRUE) OR
+        (score IS NOT NULL AND score >= 0 AND score <= 100)
+    )
+);
+
+-- 4. Final Results (computed: mid 40% + end 60%)
+CREATE TABLE final_results (
+    id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+    learner_id UUID NOT NULL REFERENCES learners(id) ON DELETE CASCADE,
+    subject_id UUID NOT NULL REFERENCES subjects(id) ON DELETE CASCADE,
+    stream_id UUID REFERENCES streams(id),
+    term_id UUID NOT NULL REFERENCES terms(id) ON DELETE CASCADE,
+    mid_term_score NUMERIC(5,2),
+    end_term_score NUMERIC(5,2),
+    final_score NUMERIC(5,2) GENERATED ALWAYS AS (
+        CASE
+            WHEN mid_term_score IS NOT NULL AND end_term_score IS NOT NULL
+            THEN ROUND((mid_term_score * 0.40) + (end_term_score * 0.60), 2)
+            ELSE NULL
+        END
+    ) STORED,
+    grade VARCHAR(5),
+    remarks TEXT,
+    stream_rank INTEGER,
+    class_rank INTEGER,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    UNIQUE (learner_id, subject_id, term_id)
+);
 
 -- ============================================================================
--- 5. ADD EOT (End of Term) EXAMS SUPPORT
+-- STEP 3: INDEXES
 -- ============================================================================
 
--- Create separate table for EOT exam scores (or use assessment_components with NULL competency_id)
--- Option A: Use existing assessment_components with competency_id = NULL for EOT
-
--- Add constraint to allow NULL competency_id for EOT exams
-ALTER TABLE assessment_components 
-DROP CONSTRAINT IF EXISTS check_competency_for_type;
-
--- No constraint needed - NULL competency_id means it's an EOT score
-
--- ============================================================================
--- 6. ADD COMMENTS FOR CLARITY
--- ============================================================================
-
-COMMENT ON COLUMN assessments.assessment_type IS 'Type: competency (regular assessment), eot (end of term exam), both (combined report)';
-COMMENT ON COLUMN assessment_components.competency_id IS 'Links to specific competency being assessed. NULL for EOT exams.';
-COMMENT ON COLUMN assessment_components.score IS 'Score on scale of 3 (or EOT raw score before conversion)';
+CREATE INDEX idx_grading_scales_active ON grading_scales(is_active);
+CREATE INDEX idx_exam_sessions_term ON exam_sessions(term_id);
+CREATE INDEX idx_exam_results_learner ON exam_results(learner_id);
+CREATE INDEX idx_exam_results_session ON exam_results(exam_session_id);
+CREATE INDEX idx_exam_results_stream ON exam_results(stream_id);
+CREATE INDEX idx_final_results_learner ON final_results(learner_id);
+CREATE INDEX idx_final_results_term ON final_results(term_id);
+CREATE INDEX idx_final_results_stream ON final_results(stream_id);
 
 -- ============================================================================
--- VERIFY FINAL STRUCTURE
+-- STEP 4: TRIGGERS (updated_at)
 -- ============================================================================
 
--- Check competencies table (renamed from indicators)
-SELECT 'competencies' as table_name, column_name, data_type
-FROM information_schema.columns 
-WHERE table_name = 'competencies'
-ORDER BY ordinal_position;
+CREATE TRIGGER update_grading_scales_updated_at
+    BEFORE UPDATE ON grading_scales
+    FOR EACH ROW EXECUTE FUNCTION update_updated_at_column();
 
--- Check assessments table
-SELECT 'assessments' as table_name, column_name, data_type
-FROM information_schema.columns 
-WHERE table_name = 'assessments'
-ORDER BY ordinal_position;
+CREATE TRIGGER update_exam_sessions_updated_at
+    BEFORE UPDATE ON exam_sessions
+    FOR EACH ROW EXECUTE FUNCTION update_updated_at_column();
 
--- Check assessment_components table
-SELECT 'assessment_components' as table_name, column_name, data_type
-FROM information_schema.columns 
-WHERE table_name = 'assessment_components'
-ORDER BY ordinal_position;
+CREATE TRIGGER update_exam_results_updated_at
+    BEFORE UPDATE ON exam_results
+    FOR EACH ROW EXECUTE FUNCTION update_updated_at_column();
 
--- Check assessment_competencies table
-SELECT 'assessment_competencies' as table_name, column_name, data_type
-FROM information_schema.columns 
-WHERE table_name = 'assessment_competencies'
-ORDER BY ordinal_position;
-
--- Check achievement_levels table
-SELECT 'achievement_levels' as table_name, column_name, data_type
-FROM information_schema.columns 
-WHERE table_name = 'achievement_levels'
-ORDER BY ordinal_position;
-
-
+CREATE TRIGGER update_final_results_updated_at
+    BEFORE UPDATE ON final_results
+    FOR EACH ROW EXECUTE FUNCTION update_updated_at_column();
 -- ============================================================================
 -- COMMENTS FOR DOCUMENTATION
 -- ============================================================================
@@ -1055,11 +775,6 @@ COMMENT ON TABLE classes IS 'Classes (S1-S4) - must have class teacher';
 COMMENT ON TABLE streams IS 'Streams within classes - each must have teacher';
 COMMENT ON TABLE subjects IS 'Subjects - cannot exist without subject teacher';
 COMMENT ON TABLE learners IS 'Students - do not have login accounts';
-COMMENT ON TABLE competency_areas IS 'NLSC competency areas per subject';
-COMMENT ON TABLE learning_outcomes IS 'Learning outcomes per competency';
-COMMENT ON TABLE indicators IS 'Performance indicators per learning outcome';
-COMMENT ON TABLE assessments IS 'Individual assessment scores';
-COMMENT ON TABLE competency_assessments IS 'Overall competency achievement levels';
 COMMENT ON TABLE report_cards IS 'Generated report cards per learner per term';
 
 -- ============================================================================

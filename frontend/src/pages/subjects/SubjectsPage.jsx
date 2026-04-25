@@ -269,14 +269,6 @@ const SubjectsPage = () => {
                 </span>
                 <span className="font-semibold text-gray-900">{subject.teacher_count || 0}</span>
               </div>
-
-              <div className="flex items-center justify-between py-2 border-t border-gray-100">
-                <span className="text-sm text-gray-600 flex items-center">
-                  <FiBook className="w-4 h-4 mr-2" />
-                  Competencies
-                </span>
-                <span className="font-semibold text-gray-900">{subject.competency_count || 0}</span>
-              </div>
             </div>
 
             <Link

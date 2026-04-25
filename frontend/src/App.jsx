@@ -40,9 +40,6 @@ import SubjectsPage from './pages/subjects/SubjectsPage';
 import LearnersPage from './pages/learners/LearnersPage';
 import LearnerDetailPage from './pages/learners/LearnerDetailPage';
 
-// Pages - Assessments
-import AssessmentsPage from './pages/assessments/AssessmentsPage';
-
 // Pages - Reports
 import ReportsPage from './pages/reports/ReportsPage';
 
@@ -184,6 +181,33 @@ function App() {
             }
           />
           
+          {/* Subjects - Admin only added */}
+          <Route 
+            path="subjects" 
+            element={
+              <ProtectedRoute requiredRole="admin">
+                <SubjectsPage />
+              </ProtectedRoute>
+            } 
+          />
+          {/* Subject Combinations - Admin only */}
+          <Route 
+            path="subjects/combinations" 
+            element={
+              <ProtectedRoute requiredRole="admin">
+                <SubjectCombinationsPage />
+              </ProtectedRoute>
+            } 
+          />
+          {/* Subject - Admin only */}
+          <Route 
+            path="subjects/:id" 
+            element={
+              <ProtectedRoute requiredRole="admin">
+                <SubjectDetailPage />
+              </ProtectedRoute>
+            } 
+          />
           {/* Classes - Admin & Super Admin */}
           <Route
             path="classes"
@@ -210,51 +234,7 @@ function App() {
               </ProtectedRoute>
             } 
           />
-          
-          {/* Subjects - Admin & Super Admin */}
-          {/* Subjects - Admin only */}
-          <Route 
-            path="subjects" 
-            element={
-              <ProtectedRoute requiredRole="admin">
-                <SubjectsPage />
-              </ProtectedRoute>
-            } 
-          />
-          <Route 
-            path="subjects/:id" 
-            element={
-              <ProtectedRoute requiredRole="admin">
-                <SubjectDetailPage />
-              </ProtectedRoute>
-            } 
-          />
-          {/* Subjects - Admin only added */}
-          <Route 
-            path="subjects" 
-            element={
-              <ProtectedRoute requiredRole="admin">
-                <SubjectsPage />
-              </ProtectedRoute>
-            } 
-          />
-          <Route 
-            path="subjects/:id" 
-            element={
-              <ProtectedRoute requiredRole="admin">
-                <SubjectDetailPage />
-              </ProtectedRoute>
-            } 
-          />
-          <Route 
-            path="subjects/combinations" 
-            element={
-              <ProtectedRoute requiredRole="admin">
-                <SubjectCombinationsPage />
-              </ProtectedRoute>
-            } 
-          />
-          
+                    
           {/* Learners - All Roles */}
           <Route path="learners" element={<LearnersPage />} />
           <Route path="learners/:id" element={<LearnerDetailPage />} />
@@ -291,11 +271,7 @@ function App() {
                 <EditLearnerPage />
               </ProtectedRoute>
             } 
-          />
-          
-          {/* Assessments - All Roles */}
-          <Route path="assessments" element={<AssessmentsPage />} />
-          
+          />          
           {/* Reports - All Roles */}
           <Route path="reports" element={<ReportsPage />} />
           
