@@ -1,4 +1,4 @@
-const pool = require('../config/database');
+const { pool } = require('../config/database');
 const { computeFinalScore, getGradeForScore } = require('../utils/grading.service');
 
 // GET /api/final-results/term/:termId

@@ -1,12 +1,7 @@
 import { useState, useEffect } from "react";
+import api from "../../services/api";
 
-const API = "/api/grading-scales";
-const token = () => localStorage.getItem("token");
-
-const headers = () => ({
-  "Content-Type": "application/json",
-  Authorization: `Bearer ${token()}`,
-});
+const API = "/grading-scales";
 
 const DEFAULT_COLORS = ["#22c55e", "#3b82f6", "#f59e0b", "#ef4444", "#8b5cf6", "#ec4899"];
 
@@ -37,12 +32,11 @@ export default function GradingScale() {
   const fetchScales = async () => {
     setLoading(true);
     try {
-      const res = await fetch(API, { headers: headers() });
-      const data = await res.json();
+      const { data } = await api.get(API);
       if (data.success) setScales(data.data);
       else setError(data.message);
-    } catch {
-      setError("Failed to load grading scales");
+    } catch (err) {
+      setError(err.response?.data?.message || "Failed to load grading scales");
     } finally {
       setLoading(false);
     }
@@ -88,17 +82,13 @@ export default function GradingScale() {
     setSaving(true);
     try {
       const url = editTarget ? `${API}/${editTarget}` : API;
-      const method = editTarget ? "PUT" : "POST";
-      const res = await fetch(url, {
-        method,
-        headers: headers(),
-        body: JSON.stringify({
+      const payload = {
           ...form,
           min_score: Number(form.min_score),
           max_score: Number(form.max_score),
-        }),
-      });
-      const data = await res.json();
+      };
+      const response = editTarget ? await api.put(url, payload) : await api.post(url, payload);
+      const data = response.data;
       if (data.success) {
         flash("success", editTarget ? "Grade scale updated" : "Grade scale created");
         setModalOpen(false);
@@ -106,8 +96,8 @@ export default function GradingScale() {
       } else {
         flash("error", data.message);
       }
-    } catch {
-      flash("error", "Save failed");
+    } catch (err) {
+      flash("error", err.response?.data?.message || "Save failed");
     } finally {
       setSaving(false);
     }
@@ -116,12 +106,11 @@ export default function GradingScale() {
   // ── Delete ────────────────────────────────────────────────
   const handleDelete = async (id) => {
     try {
-      const res = await fetch(`${API}/${id}`, { method: "DELETE", headers: headers() });
-      const data = await res.json();
+      const { data } = await api.delete(`${API}/${id}`);
       if (data.success) { flash("success", "Grade scale deleted"); fetchScales(); }
       else flash("error", data.message);
-    } catch {
-      flash("error", "Delete failed");
+    } catch (err) {
+      flash("error", err.response?.data?.message || "Delete failed");
     } finally {
       setDeleteConfirm(null);
     }
@@ -131,12 +120,11 @@ export default function GradingScale() {
   const handleReset = async () => {
     setResetting(true);
     try {
-      const res = await fetch(`${API}/reset/defaults`, { method: "POST", headers: headers() });
-      const data = await res.json();
+      const { data } = await api.post(`${API}/reset/defaults`);
       if (data.success) { flash("success", "Grading scales reset to defaults"); fetchScales(); }
       else flash("error", data.message);
-    } catch {
-      flash("error", "Reset failed");
+    } catch (err) {
+      flash("error", err.response?.data?.message || "Reset failed");
     } finally {
       setResetting(false);
       setResetConfirm(false);

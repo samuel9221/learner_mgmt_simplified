@@ -1,4 +1,4 @@
-const pool = require('../config/database');
+const { pool } = require('../config/database');
 const { applyWeight, computeFinalScore, getGradeForScore } = require('../utils/grading.service');
 
 // ─── Helper: auto-compute & upsert final_result after any score change ───────
@@ -50,6 +50,23 @@ const _recomputeFinalResult = async (client, learnerId, subjectId, streamId, ter
 const _getSessionTerm = async (client, sessionId) => {
   const r = await client.query(`SELECT term_id FROM exam_sessions WHERE id = $1`, [sessionId]);
   return r.rows[0]?.term_id ?? null;
+};
+
+const _teacherCanEnterSubject = async (client, teacherId, subjectId, streamId, sessionId) => {
+  const result = await client.query(
+    `SELECT 1
+     FROM subject_teachers st
+     JOIN exam_sessions es ON es.id = $4
+     JOIN terms t ON t.id = es.term_id
+     WHERE st.teacher_id = $1
+       AND st.subject_id = $2
+       AND st.academic_year_id = t.academic_year_id
+       AND (st.stream_id = $3 OR st.stream_id IS NULL)
+     LIMIT 1`,
+    [teacherId, subjectId, streamId, sessionId]
+  );
+
+  return result.rows.length > 0;
 };
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -205,18 +222,30 @@ const create = async (req, res) => {
     const teacher_id = req.user.id;
 
     // Validate score range
-    if (!is_absent && (score < 0 || score > 100))
+    if (!is_absent && (score < 0 || score > 100)) {
+      await client.query('ROLLBACK');
       return res.status(400).json({ success: false, message: 'Score must be between 0 and 100' });
+    }
 
     // Get session to know exam_type + term_id
     const sessionRow = await client.query(
       `SELECT id, exam_type, term_id FROM exam_sessions WHERE id = $1`,
       [exam_session_id]
     );
-    if (!sessionRow.rows.length)
+    if (!sessionRow.rows.length) {
+      await client.query('ROLLBACK');
       return res.status(404).json({ success: false, message: 'Exam session not found' });
+    }
 
     const { term_id } = sessionRow.rows[0];
+
+    if (req.user.role === 'teacher') {
+      const allowed = await _teacherCanEnterSubject(client, teacher_id, subject_id, stream_id, exam_session_id);
+      if (!allowed) {
+        await client.query('ROLLBACK');
+        return res.status(403).json({ success: false, message: 'You are not assigned to enter marks for this subject' });
+      }
+    }
 
     // Insert result (score stored as-is in 0-100; weight applied in final_results)
     const result = await client.query(
@@ -254,25 +283,44 @@ const bulkCreate = async (req, res) => {
     const { exam_session_id, stream_id, results } = req.body;
     const teacher_id = req.user.id;
 
-    if (!Array.isArray(results) || !results.length)
+    if (!Array.isArray(results) || !results.length) {
+      await client.query('ROLLBACK');
       return res.status(400).json({ success: false, message: 'Results array is required' });
+    }
 
     // Get session
     const sessionRow = await client.query(
       `SELECT id, exam_type, term_id FROM exam_sessions WHERE id = $1`,
       [exam_session_id]
     );
-    if (!sessionRow.rows.length)
+    if (!sessionRow.rows.length) {
+      await client.query('ROLLBACK');
       return res.status(404).json({ success: false, message: 'Exam session not found' });
+    }
 
     const { term_id } = sessionRow.rows[0];
     const inserted = [];
+    const checkedSubjects = new Map();
 
     for (const entry of results) {
       const { learner_id, subject_id, score, is_absent } = entry;
 
       // Validate score
       if (!is_absent && (score < 0 || score > 100)) continue;
+
+      if (req.user.role === 'teacher') {
+        if (!checkedSubjects.has(subject_id)) {
+          checkedSubjects.set(
+            subject_id,
+            await _teacherCanEnterSubject(client, teacher_id, subject_id, stream_id, exam_session_id)
+          );
+        }
+
+        if (!checkedSubjects.get(subject_id)) {
+          await client.query('ROLLBACK');
+          return res.status(403).json({ success: false, message: 'You are not assigned to enter marks for this subject' });
+        }
+      }
 
       const r = await client.query(
         `INSERT INTO exam_results
@@ -314,8 +362,10 @@ const update = async (req, res) => {
     const { id } = req.params;
     const { score, is_absent } = req.body;
 
-    if (!is_absent && (score < 0 || score > 100))
+    if (!is_absent && (score < 0 || score > 100)) {
+      await client.query('ROLLBACK');
       return res.status(400).json({ success: false, message: 'Score must be between 0 and 100' });
+    }
 
     // Get existing record to know IDs for recompute
     const existing = await client.query(
@@ -325,8 +375,10 @@ const update = async (req, res) => {
        WHERE er.id = $1`,
       [id]
     );
-    if (!existing.rows.length)
+    if (!existing.rows.length) {
+      await client.query('ROLLBACK');
       return res.status(404).json({ success: false, message: 'Result not found' });
+    }
 
     const { learner_id, subject_id, stream_id, term_id } = existing.rows[0];
 
@@ -367,8 +419,10 @@ const remove = async (req, res) => {
        WHERE er.id = $1`,
       [id]
     );
-    if (!existing.rows.length)
+    if (!existing.rows.length) {
+      await client.query('ROLLBACK');
       return res.status(404).json({ success: false, message: 'Result not found' });
+    }
 
     const { learner_id, subject_id, stream_id, term_id } = existing.rows[0];
 

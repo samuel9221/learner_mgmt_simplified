@@ -58,13 +58,18 @@ const getStreamAnalysis = async (req, res) => {
       .reduce((min, g) => Math.min(min, g.min_score), 100);
 
     const passFailStats = await pool.query(
-      `SELECT
-         COUNT(CASE WHEN final_score >= $3 THEN 1 END) AS passed,
-         COUNT(CASE WHEN final_score < $3  THEN 1 END) AS failed,
-         COUNT(CASE WHEN final_score IS NULL THEN 1 END) AS not_graded,
-         COUNT(DISTINCT learner_id) AS total_learners
-       FROM final_results
-       WHERE stream_id = $1 AND term_id = $2`,
+      `WITH learner_averages AS (
+         SELECT learner_id, AVG(final_score) AS overall_average
+         FROM final_results
+         WHERE stream_id = $1 AND term_id = $2
+         GROUP BY learner_id
+       )
+       SELECT
+         COUNT(CASE WHEN overall_average >= $3 THEN 1 END) AS passed,
+         COUNT(CASE WHEN overall_average < $3  THEN 1 END) AS failed,
+         COUNT(CASE WHEN overall_average IS NULL THEN 1 END) AS not_graded,
+         COUNT(*) AS total_learners
+       FROM learner_averages`,
       [streamId, termId, passThreshold]
     );
 
@@ -277,14 +282,20 @@ const getClassRankings = async (req, res) => {
     const rankings = await pool.query(
       `SELECT l.admission_number,
               l.first_name || ' ' || l.last_name AS learner_name,
+              l.gender,
               st.stream_name,
               ROUND(AVG(fr.final_score), 2) AS overall_average,
-              MIN(fr.class_rank) AS class_rank
+              MIN(fr.class_rank) AS class_rank,
+              COUNT(fr.id) AS subjects_taken,
+              COUNT(CASE WHEN fr.grade = 'A' THEN 1 END) AS grade_a_count,
+              COUNT(CASE WHEN fr.grade = 'B' THEN 1 END) AS grade_b_count,
+              COUNT(CASE WHEN fr.grade = 'C' THEN 1 END) AS grade_c_count,
+              COUNT(CASE WHEN fr.grade = 'D' THEN 1 END) AS grade_d_count
        FROM final_results fr
        JOIN learners l ON fr.learner_id = l.id
        JOIN streams st ON fr.stream_id = st.id
        WHERE st.class_id = $1 AND fr.term_id = $2
-       GROUP BY l.id, l.admission_number, l.first_name, l.last_name, st.stream_name
+       GROUP BY l.id, l.admission_number, l.first_name, l.last_name, l.gender, st.stream_name
        ORDER BY class_rank ASC NULLS LAST`,
       [classId, termId]
     );

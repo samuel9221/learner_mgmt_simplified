@@ -12,7 +12,7 @@ const { query, transaction } = require('../config/database');
  */
 const getAllLearners = async (req, res) => {
   try {
-    const { status, page = 1, limit = 50, search } = req.query;
+    const { status, stream_id, academic_year_id, subject_id, page = 1, limit = 50, search } = req.query;
     const offset = (page - 1) * limit;
 
     let whereClause = '';
@@ -32,8 +32,41 @@ const getAllLearners = async (req, res) => {
       params.push(`%${search}%`);
     }
 
+    if (stream_id) {
+      paramCount++;
+      const streamClause = `le.stream_id = $${paramCount}`;
+      whereClause = whereClause ? `${whereClause} AND ${streamClause}` : `WHERE ${streamClause}`;
+      params.push(stream_id);
+    }
+
+    if (academic_year_id) {
+      paramCount++;
+      const yearClause = `le.academic_year_id = $${paramCount}`;
+      whereClause = whereClause ? `${whereClause} AND ${yearClause}` : `WHERE ${yearClause}`;
+      params.push(academic_year_id);
+    }
+
+    if (subject_id) {
+      paramCount++;
+      const subjectClause = `ls.subject_id = $${paramCount}`;
+      whereClause = whereClause ? `${whereClause} AND ${subjectClause}` : `WHERE ${subjectClause}`;
+      params.push(subject_id);
+    }
+
+    const subjectJoin = subject_id
+      ? `JOIN learner_subjects ls
+           ON ls.learner_id = l.id
+          AND ls.academic_year_id = le.academic_year_id`
+      : '';
+
     // Get total count
-    const countQuery = `SELECT COUNT(*) FROM learners l ${whereClause}`;
+    const countQuery = `
+      SELECT COUNT(DISTINCT l.id)
+      FROM learners l
+      LEFT JOIN learner_enrollments le ON l.id = le.learner_id AND le.status = 'active'
+      ${subjectJoin}
+      ${whereClause}
+    `;
     const countResult = await query(countQuery, params);
     const total = parseInt(countResult.rows[0].count);
 
@@ -52,6 +85,7 @@ const getAllLearners = async (req, res) => {
       LEFT JOIN streams s ON le.stream_id = s.id
       LEFT JOIN classes c ON le.class_id = c.id
       LEFT JOIN academic_years ay ON le.academic_year_id = ay.id
+      ${subjectJoin}
       ${whereClause}
       ORDER BY l.last_name, l.first_name
       LIMIT $${paramCount + 1} OFFSET $${paramCount + 2}

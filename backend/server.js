@@ -9,6 +9,7 @@ const cors = require('cors');
 
 const { testConnection, closePool } = require('./config/database');
 const { errorHandler, notFound } = require('./middleware/errorHandler');
+const ensureExamTables = require('./utils/ensureExamTables');
 
 const app = express();
 const PORT = process.env.PORT || 5000;
@@ -98,6 +99,9 @@ const startServer = async () => {
       process.exit(1);
     }
     
+    await ensureExamTables();
+    console.log('Exam tables verified successfully');
+
     const server = app.listen(PORT, () => {
       console.log(`
 ╔════════════════════════════════════════════════════════════════╗

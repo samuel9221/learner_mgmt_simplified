@@ -1,7 +1,7 @@
 const express = require('express');
 const router = express.Router();
 const reportsController = require('../controllers/reports.controller');
-const { authenticate, authorizeAdmin } = require('../middleware/auth');
+const { authenticate } = require('../middleware/auth');
 
 router.use(authenticate);
 
@@ -28,6 +28,6 @@ router.get('/stream/:streamId/term/:termId/pdf', reportsController.getStreamRepo
 router.get('/subject/:subjectId/term/:termId/pdf', reportsController.getSubjectReportPdf);
 
 // GET /api/reports/class/:classId/term/:termId/pdf          - Full class PDF (all streams)
-router.get('/class/:classId/term/:termId/pdf', authorizeAdmin, reportsController.getClassReportPdf);
+router.get('/class/:classId/term/:termId/pdf', reportsController.getClassReportPdf);
 
 module.exports = router;

@@ -1,6 +1,5 @@
 // ============================================================================
 // APP COMPONENT
-// Main application component with routing and layout
 // ============================================================================
 
 import React from 'react';
@@ -12,291 +11,197 @@ import { useAuthStore } from './context/authStore';
 import DashboardLayout from './components/layout/DashboardLayout';
 import AuthLayout from './components/layout/AuthLayout';
 
-// Pages - Authentication
+// Auth
 import LoginPage from './pages/auth/LoginPage';
 import ForgotPasswordPage from './pages/auth/ForgotPasswordPage';
 
-// Pages - Dashboard
+// Dashboard
 import DashboardHome from './pages/dashboard/DashboardHome';
 import ProfilePage from './pages/dashboard/ProfilePage';
 
-// Pages - Academic Years
+// Academic Years
 import AcademicYearsPage from './pages/academicYears/AcademicYearsPage';
 import AcademicYearDetailPage from './pages/academicYears/AcademicYearDetailPage';
 
-// Pages - Terms
+// Terms
 import TermsPage from './pages/terms/TermsPage';
 
-// Pages - Classes
+// Classes
 import ClassesPage from './pages/classes/ClassesPage';
-
-// stream detail page
 import StreamDetailPage from './pages/classes/StreamDetailPage';
 
-// Pages - Subjects
+// Subjects
 import SubjectsPage from './pages/subjects/SubjectsPage';
-
-// Pages - Learners
-import LearnersPage from './pages/learners/LearnersPage';
-import LearnerDetailPage from './pages/learners/LearnerDetailPage';
-
-// Pages - Reports
-import ReportsPage from './pages/reports/ReportsPage';
-
-// Pages - Users (Admin)
-import UsersPage from './pages/users/UsersPage';
-
-// Pages - Settings
-import SettingsPage from './pages/settings/SettingsPage';
-
-//pages - subject details pages
 import SubjectDetailPage from './pages/subjects/SubjectDetailPage';
-
-// Pages - Subject Combinations
 import SubjectCombinationsPage from './pages/subjects/SubjectCombinationsPage';
 
+// Learners
+import LearnersPage from './pages/learners/LearnersPage';
+import LearnerDetailPage from './pages/learners/LearnerDetailPage';
 import AdmitLearnerPage from './pages/learners/AdmitLearnerPage';
-
 import EditLearnerPage from './pages/learners/EditLearnerPage';
 
-// Protected Route Component
+// Reports
+import ReportsPage from './pages/reports/ReportsPage';
+
+// Users
+import UsersPage from './pages/users/UsersPage';
+
+// Settings
+import SettingsPage from './pages/settings/SettingsPage';
+import GradingScale from './pages/settings/GradingScale';
+
+// Exams
+import ExamSessions from './pages/exams/ExamSessions';
+import ExamEntry from './pages/exams/ExamEntry';
+
+// Results
+import FinalResults from './pages/results/FinalResults';
+import Rankings from './pages/results/Rankings';
+
+// Analysis
+import Analysis from './pages/analysis/Analysis';
+
+// ── Route Guards ──────────────────────────────────────────────────────────────
 const ProtectedRoute = ({ children, requiredRole }) => {
   const { isAuthenticated, hasRole } = useAuthStore();
-  
-  if (!isAuthenticated) {
-    return <Navigate to="/login" replace />;
-  }
-  
-  if (requiredRole && !hasRole(requiredRole)) {
-    return <Navigate to="/dashboard" replace />;
-  }
-  
+  if (!isAuthenticated) return <Navigate to="/login" replace />;
+  if (requiredRole && !hasRole(requiredRole)) return <Navigate to="/dashboard" replace />;
   return children;
 };
 
-// Public Route Component (redirect if authenticated)
 const PublicRoute = ({ children }) => {
   const { isAuthenticated } = useAuthStore();
-  
-  if (isAuthenticated) {
-    return <Navigate to="/dashboard" replace />;
-  }
-  
+  if (isAuthenticated) return <Navigate to="/dashboard" replace />;
   return children;
 };
 
+// ─────────────────────────────────────────────────────────────────────────────
 function App() {
   return (
     <BrowserRouter>
-      {/* Toast notifications */}
       <Toaster
         position="top-right"
         toastOptions={{
           duration: 4000,
-          style: {
-            background: '#363636',
-            color: '#fff',
-            borderRadius: '0.5rem',
-            padding: '1rem',
-          },
-          success: {
-            iconTheme: {
-              primary: '#22c55e',
-              secondary: '#fff',
-            },
-          },
-          error: {
-            iconTheme: {
-              primary: '#ef4444',
-              secondary: '#fff',
-            },
-          },
+          style: { background: '#363636', color: '#fff', borderRadius: '0.5rem', padding: '1rem' },
+          success: { iconTheme: { primary: '#22c55e', secondary: '#fff' } },
+          error:   { iconTheme: { primary: '#ef4444', secondary: '#fff' } },
         }}
       />
 
       <Routes>
-        {/* Public Routes */}
-        <Route
-          path="/login"
-          element={
-            <PublicRoute>
-              <AuthLayout>
-                <LoginPage />
-              </AuthLayout>
-            </PublicRoute>
-          }
-        />
-        
-        <Route
-          path="/forgot-password"
-          element={
-            <PublicRoute>
-              <AuthLayout>
-                <ForgotPasswordPage />
-              </AuthLayout>
-            </PublicRoute>
-          }
-        />
 
-        {/* Protected Routes */}
-        <Route
-          path="/dashboard"
-          element={
-            <ProtectedRoute>
-              <DashboardLayout />
-            </ProtectedRoute>
-          }
-        >
-          {/* Dashboard Home */}
+        {/* ── Public routes ── */}
+        <Route path="/login" element={
+          <PublicRoute><AuthLayout><LoginPage /></AuthLayout></PublicRoute>
+        } />
+        <Route path="/forgot-password" element={
+          <PublicRoute><AuthLayout><ForgotPasswordPage /></AuthLayout></PublicRoute>
+        } />
+
+        {/* ── Dashboard shell (all protected children render inside Outlet) ── */}
+        <Route path="/dashboard" element={
+          <ProtectedRoute><DashboardLayout /></ProtectedRoute>
+        }>
+
+          {/* Home */}
           <Route index element={<DashboardHome />} />
-          
-          {/* Profile */}
           <Route path="profile" element={<ProfilePage />} />
-          
-          {/* Academic Years - Super Admin Only */}
-          <Route
-            path="academic-years"
-            element={
-              <ProtectedRoute requiredRole="super_admin">
-                <AcademicYearsPage />
-              </ProtectedRoute>
-            }
-          />
-          <Route
-            path="academic-years/:id"
-            element={
-              <ProtectedRoute requiredRole="super_admin">
-                <AcademicYearDetailPage />
-              </ProtectedRoute>
-            }
-          />
-          
-          {/* Terms - Admin & Super Admin */}
-          <Route
-            path="terms"
-            element={
-              <ProtectedRoute requiredRole="admin">
-                <TermsPage />
-              </ProtectedRoute>
-            }
-          />
-          
-          {/* Subjects - Admin only added */}
+
+          {/* Academic Years — super_admin only */}
+          <Route path="academic-years" element={
+            <ProtectedRoute requiredRole="super_admin"><AcademicYearsPage /></ProtectedRoute>
+          } />
+          <Route path="academic-years/:id" element={
+            <ProtectedRoute requiredRole="admin"><AcademicYearDetailPage /></ProtectedRoute>
+          } />
+
+          {/* Terms — admin+ */}
+          <Route path="terms" element={
+            <ProtectedRoute requiredRole="admin"><TermsPage /></ProtectedRoute>
+          } />
+
+          {/* Subjects — admin+ */}
+          <Route path="subjects" element={
+            <ProtectedRoute requiredRole="admin"><SubjectsPage /></ProtectedRoute>
+          } />
+          <Route path="subjects/combinations" element={
+            <ProtectedRoute requiredRole="admin"><SubjectCombinationsPage /></ProtectedRoute>
+          } />
+          <Route path="subjects/:id" element={
+            <ProtectedRoute requiredRole="admin"><SubjectDetailPage /></ProtectedRoute>
+          } />
+
+          {/* Classes — admin+ */}
+          <Route path="classes" element={
+            <ProtectedRoute requiredRole="admin"><ClassesPage /></ProtectedRoute>
+          } />
+          <Route path="classes/stream/:streamId" element={
+            <ProtectedRoute requiredRole="admin"><StreamDetailPage /></ProtectedRoute>
+          } />
+
+          {/* Learners — all roles view, admin manages */}
+          <Route path="learners" element={
+            <ProtectedRoute><LearnersPage /></ProtectedRoute>
+          } />
+          <Route path="learners/admit" element={
+            <ProtectedRoute requiredRole="admin"><AdmitLearnerPage /></ProtectedRoute>
+          } />
+          <Route path="learners/:id" element={
+            <ProtectedRoute><LearnerDetailPage /></ProtectedRoute>
+          } />
+          <Route path="learners/:id/edit" element={
+            <ProtectedRoute requiredRole="admin"><EditLearnerPage /></ProtectedRoute>
+          } />
+
+          {/* ── Exams — relative paths (no leading slash) ── */}
+          <Route path="exams/sessions" element={
+            <ProtectedRoute requiredRole="admin"><ExamSessions /></ProtectedRoute>
+          } />
+          <Route path="exams/entry" element={
+            <ProtectedRoute requiredRole="teacher"><ExamEntry /></ProtectedRoute>
+          } />
+
+          {/* ── Results ── */}
+          <Route path="results/final" element={
+            <ProtectedRoute><FinalResults /></ProtectedRoute>
+          } />
+          <Route path="results/rankings" element={
+            <ProtectedRoute><Rankings /></ProtectedRoute>
+          } />
+
+          {/* ── Analysis ── */}
           <Route 
-            path="subjects" 
-            element={
-              <ProtectedRoute requiredRole="admin">
-                <SubjectsPage />
-              </ProtectedRoute>
-            } 
-          />
-          {/* Subject Combinations - Admin only */}
-          <Route 
-            path="subjects/combinations" 
-            element={
-              <ProtectedRoute requiredRole="admin">
-                <SubjectCombinationsPage />
-              </ProtectedRoute>
-            } 
-          />
-          {/* Subject - Admin only */}
-          <Route 
-            path="subjects/:id" 
-            element={
-              <ProtectedRoute requiredRole="admin">
-                <SubjectDetailPage />
-              </ProtectedRoute>
-            } 
-          />
-          {/* Classes - Admin & Super Admin */}
-          <Route
-            path="classes"
-            element={
-              <ProtectedRoute requiredRole="admin">
-                <ClassesPage />
-              </ProtectedRoute>
-            }
-          />
-          {/* Classes - Admin only */}
-          <Route 
-            path="classes" 
-            element={
-              <ProtectedRoute requiredRole="admin">
-                <ClassesPage />
-              </ProtectedRoute>
-            } 
-          />
-          <Route 
-            path="classes/stream/:streamId" 
-            element={
-              <ProtectedRoute requiredRole="admin">
-                <StreamDetailPage />
-              </ProtectedRoute>
-            } 
-          />
-                    
-          {/* Learners - All Roles */}
-          <Route path="learners" element={<LearnersPage />} />
-          <Route path="learners/:id" element={<LearnerDetailPage />} />
-          
-          {/* Learners - All roles can view, Admin can manage */}
-          <Route 
-            path="learners" 
-            element={
-              <ProtectedRoute>
-                <LearnersPage />
-              </ProtectedRoute>
-            } 
-          />
-          <Route 
-            path="learners/admit" 
-            element={
-              <ProtectedRoute requiredRole="admin">
-                <AdmitLearnerPage />
-              </ProtectedRoute>
-            } 
-          />
-          <Route 
-            path="learners/:id" 
-            element={
-              <ProtectedRoute>
-                <LearnerDetailPage />
-              </ProtectedRoute>
-            } 
-          />
-          <Route 
-            path="learners/:id/edit" 
-            element={
-              <ProtectedRoute requiredRole="admin">
-                <EditLearnerPage />
-              </ProtectedRoute>
-            } 
-          />          
-          {/* Reports - All Roles */}
+            path="analysis" 
+              element={
+                <ProtectedRoute requiredRole="admin">
+                  <Analysis />
+                </ProtectedRoute>
+          } />
+
+          {/* Reports — all roles */}
           <Route path="reports" element={<ReportsPage />} />
-          
-          {/* Users - Admin & Super Admin */}
-          <Route
-            path="users"
-            element={
-              <ProtectedRoute requiredRole="admin">
-                <UsersPage />
-              </ProtectedRoute>
-            }
-          />
-          
-          {/* Settings */}
-          <Route path="settings" element={<SettingsPage />} />
+
+          {/* Users — admin+ */}
+          <Route path="users" element={
+            <ProtectedRoute requiredRole="admin"><UsersPage /></ProtectedRoute>
+          } />
+
+          {/* Settings — admin+ */}
+          <Route path="settings" element={
+            <ProtectedRoute requiredRole="admin"><SettingsPage /></ProtectedRoute>
+          } />
+          <Route path="settings/grading-scale" element={
+            <ProtectedRoute requiredRole="admin"><GradingScale /></ProtectedRoute>
+          } />
+
         </Route>
 
-        {/* Redirect root to dashboard or login */}
-        <Route
-          path="/"
-          element={<Navigate to="/dashboard" replace />}
-        />
-        
-        {/* 404 - Redirect to dashboard */}
+        {/* Fallbacks */}
+        <Route path="/" element={<Navigate to="/dashboard" replace />} />
         <Route path="*" element={<Navigate to="/dashboard" replace />} />
+
       </Routes>
     </BrowserRouter>
   );

@@ -14,6 +14,12 @@ import {
   FiX,
   FiUser,
   FiUserPlus,
+  FiEdit,
+  FiAward,
+  FiTrendingUp,
+  FiList,
+  FiPieChart,
+  FiSliders,
 } from 'react-icons/fi';
 import { useAuthStore } from '../../context/authStore';
 import toast from 'react-hot-toast';
@@ -31,12 +37,15 @@ const DashboardLayout = () => {
   };
 
   const navigationItems = [
+    // ── General ──────────────────────────────────────────────
     {
       name: 'Dashboard',
       path: '/dashboard',
       icon: FiHome,
       roles: ['super_admin', 'admin', 'teacher'],
     },
+
+    // ── Administration ────────────────────────────────────────
     {
       name: 'Academic Years',
       path: '/dashboard/academic-years',
@@ -67,10 +76,44 @@ const DashboardLayout = () => {
       icon: FiUserPlus,
       roles: ['super_admin', 'admin', 'teacher'],
     },
+
+    // ── Exams ─────────────────────────────────────────────────
     {
-      name: 'Assessments',
-      path: '/dashboard/assessments',
-      icon: FiFileText,
+      name: 'Exam Sessions',
+      path: '/dashboard/exams/sessions',
+      icon: FiList,
+      roles: ['super_admin', 'admin'],
+      section: 'Exams',
+    },
+    {
+      name: 'Score Entry',
+      path: '/dashboard/exams/entry',
+      icon: FiEdit,
+      roles: ['super_admin', 'admin', 'teacher'],
+      section: 'Exams',
+    },
+
+    // ── Results ───────────────────────────────────────────────
+    {
+      name: 'Final Results',
+      path: '/dashboard/results/final',
+      icon: FiAward,
+      roles: ['super_admin', 'admin', 'teacher'],
+      section: 'Results',
+    },
+    {
+      name: 'Rankings',
+      path: '/dashboard/results/rankings',
+      icon: FiTrendingUp,
+      roles: ['super_admin', 'admin', 'teacher'],
+      section: 'Results',
+    },
+
+    // ── Analysis & Reports ────────────────────────────────────
+    {
+      name: 'Analysis',
+      path: '/dashboard/analysis',
+      icon: FiPieChart,
       roles: ['super_admin', 'admin', 'teacher'],
     },
     {
@@ -79,6 +122,8 @@ const DashboardLayout = () => {
       icon: FiBarChart2,
       roles: ['super_admin', 'admin', 'teacher'],
     },
+
+    // ── System ────────────────────────────────────────────────
     {
       name: 'Users',
       path: '/dashboard/users',
@@ -86,15 +131,16 @@ const DashboardLayout = () => {
       roles: ['super_admin', 'admin'],
     },
     {
+      name: 'Grading Scale',
+      path: '/dashboard/settings/grading-scale',
+      icon: FiSliders,
+      roles: ['super_admin', 'admin'],
+    },
+    {
       name: 'Settings',
       path: '/dashboard/settings',
       icon: FiSettings,
-      roles: ['super_admin', 'admin', 'teacher'],
-    },
-    { name: 'Learners', 
-      path: '/dashboard/learners', 
-      icon: FiUsers, 
-      roles: ['super_admin', 'admin', 'teacher'] 
+      roles: ['super_admin', 'admin'],
     },
   ];
 
@@ -103,7 +149,8 @@ const DashboardLayout = () => {
   );
 
   const NavLink = ({ item }) => {
-    const isActive = location.pathname === item.path;
+    const isActive = location.pathname === item.path ||
+      (item.path !== '/dashboard' && location.pathname.startsWith(item.path));
     const Icon = item.icon;
 
     return (
@@ -120,6 +167,27 @@ const DashboardLayout = () => {
         <span className="font-medium">{item.name}</span>
       </Link>
     );
+  };
+
+  // Group nav items — inject a section divider when section label changes
+  const renderNav = () => {
+    let lastSection = null;
+    return visibleNavItems.map((item) => {
+      const showDivider = item.section && item.section !== lastSection;
+      if (item.section) lastSection = item.section;
+      return (
+        <React.Fragment key={item.path}>
+          {showDivider && (
+            <div className="pt-3 pb-1 px-4">
+              <span className="text-xs font-semibold text-gray-400 uppercase tracking-widest">
+                {item.section}
+              </span>
+            </div>
+          )}
+          <NavLink item={item} />
+        </React.Fragment>
+      );
+    });
   };
 
   return (
@@ -156,9 +224,7 @@ const DashboardLayout = () => {
           </div>
 
           <nav className="flex-1 overflow-y-auto p-4 space-y-1">
-            {visibleNavItems.map((item) => (
-              <NavLink key={item.path} item={item} />
-            ))}
+            {renderNav()}
           </nav>
 
           <div className="border-t border-gray-200 p-4">

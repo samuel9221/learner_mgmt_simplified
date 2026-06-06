@@ -1,4 +1,4 @@
-const pool = require('../config/database');
+const { pool } = require('../config/database');
 
 // GET /api/exam-sessions
 const getAll = async (req, res) => {
@@ -49,8 +49,9 @@ const getById = async (req, res) => {
        WHERE es.id = $1`,
       [id]
     );
-    if (!result.rows.length)
+    if (!result.rows.length) {
       return res.status(404).json({ success: false, message: 'Exam session not found' });
+    }
 
     res.json({ success: true, data: result.rows[0] });
   } catch (err) {
@@ -65,16 +66,16 @@ const create = async (req, res) => {
     const { term_id, exam_type, start_date, end_date } = req.body;
     const created_by = req.user.id;
 
-    // Check duplicate
     const exists = await pool.query(
       `SELECT id FROM exam_sessions WHERE term_id = $1 AND exam_type = $2`,
       [term_id, exam_type]
     );
-    if (exists.rows.length)
+    if (exists.rows.length) {
       return res.status(400).json({
         success: false,
-        message: `A ${exam_type.replace('_', ' ')} session already exists for this term`
+        message: `A ${exam_type.replace('_', ' ')} session already exists for this term`,
       });
+    }
 
     const result = await pool.query(
       `INSERT INTO exam_sessions (term_id, exam_type, start_date, end_date, created_by)
@@ -94,7 +95,6 @@ const update = async (req, res) => {
   try {
     const { id } = req.params;
     const { start_date, end_date } = req.body;
-    // Note: term_id and exam_type should not be changed — create a new one instead
 
     const result = await pool.query(
       `UPDATE exam_sessions
@@ -103,8 +103,9 @@ const update = async (req, res) => {
        RETURNING *`,
       [start_date, end_date, id]
     );
-    if (!result.rows.length)
+    if (!result.rows.length) {
       return res.status(404).json({ success: false, message: 'Exam session not found' });
+    }
 
     res.json({ success: true, data: result.rows[0] });
   } catch (err) {
@@ -124,8 +125,9 @@ const toggleActive = async (req, res) => {
        RETURNING *`,
       [id]
     );
-    if (!result.rows.length)
+    if (!result.rows.length) {
       return res.status(404).json({ success: false, message: 'Exam session not found' });
+    }
 
     res.json({ success: true, data: result.rows[0] });
   } catch (err) {
@@ -136,31 +138,67 @@ const toggleActive = async (req, res) => {
 
 // DELETE /api/exam-sessions/:id
 const remove = async (req, res) => {
+  const client = await pool.connect();
   try {
+    await client.query('BEGIN');
     const { id } = req.params;
 
-    // Block deletion if results exist for this session
-    const hasResults = await pool.query(
-      `SELECT id FROM exam_results WHERE exam_session_id = $1 LIMIT 1`,
+    const session = await client.query(
+      `SELECT id, term_id, exam_type FROM exam_sessions WHERE id = $1`,
       [id]
     );
-    if (hasResults.rows.length)
-      return res.status(400).json({
-        success: false,
-        message: 'Cannot delete session — exam results exist. Delete results first.'
-      });
+    if (!session.rows.length) {
+      await client.query('ROLLBACK');
+      return res.status(404).json({ success: false, message: 'Exam session not found' });
+    }
 
-    const result = await pool.query(
+    const { term_id, exam_type } = session.rows[0];
+    const affected = await client.query(
+      `SELECT DISTINCT learner_id, subject_id
+       FROM exam_results
+       WHERE exam_session_id = $1`,
+      [id]
+    );
+
+    const result = await client.query(
       `DELETE FROM exam_sessions WHERE id = $1 RETURNING id`,
       [id]
     );
-    if (!result.rows.length)
-      return res.status(404).json({ success: false, message: 'Exam session not found' });
 
-    res.json({ success: true, message: 'Exam session deleted' });
+    const scoreColumn = exam_type === 'mid_term' ? 'mid_term_score' : 'end_term_score';
+    for (const row of affected.rows) {
+      await client.query(
+        `UPDATE final_results
+         SET ${scoreColumn} = NULL,
+             grade = 'N/A',
+             remarks = '',
+             updated_at = CURRENT_TIMESTAMP
+         WHERE learner_id = $1 AND subject_id = $2 AND term_id = $3`,
+        [row.learner_id, row.subject_id, term_id]
+      );
+    }
+
+    await client.query(
+      `DELETE FROM final_results
+       WHERE term_id = $1
+         AND mid_term_score IS NULL
+         AND end_term_score IS NULL`,
+      [term_id]
+    );
+
+    await client.query('COMMIT');
+    res.json({
+      success: true,
+      message: 'Exam session deleted',
+      deleted_results: affected.rows.length,
+      data: result.rows[0],
+    });
   } catch (err) {
+    await client.query('ROLLBACK');
     console.error('remove exam session:', err);
     res.status(500).json({ success: false, message: 'Server error' });
+  } finally {
+    client.release();
   }
 };
 

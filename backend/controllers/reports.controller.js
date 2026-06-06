@@ -2,8 +2,17 @@ const pool = require('../config/database');
 const puppeteer = require('puppeteer');
 const { getAllGradingScales } = require('../utils/grading.service');
 
-// ─── Shared: fetch learner report data ───────────────────────────────────────
-const _getLearnerReportData = async (learnerId, termId) => {
+// â”€â”€â”€ Shared: fetch learner report data â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+const REPORT_MODES = {
+  mid_term: { title: 'MID TERM REPORT', filename: 'mid_term', examType: 'mid_term' },
+  end_of_term: { title: 'END OF TERM REPORT', filename: 'end_of_term', examType: 'end_of_term' },
+  combined: { title: 'COMBINED MID & END OF TERM REPORT', filename: 'combined', examType: null },
+};
+
+const _reportMode = (value) => REPORT_MODES[value] ? value : 'combined';
+
+const _getLearnerReportData = async (learnerId, termId, mode = 'combined') => {
+  const reportMode = _reportMode(mode);
   const learner = await pool.query(
     `SELECT l.*,
             c.class_name, st.stream_name,
@@ -22,30 +31,66 @@ const _getLearnerReportData = async (learnerId, termId) => {
     [learnerId, termId]
   );
 
-  const results = await pool.query(
-    `SELECT fr.*,
-            s.subject_name, s.subject_code
-     FROM final_results fr
-     JOIN subjects s ON fr.subject_id = s.id
-     WHERE fr.learner_id = $1 AND fr.term_id = $2
-     ORDER BY s.subject_name`,
-    [learnerId, termId]
-  );
+  const results = reportMode === 'combined'
+    ? await pool.query(
+      `SELECT fr.*,
+              s.subject_name, s.subject_code
+       FROM final_results fr
+       JOIN subjects s ON fr.subject_id = s.id
+       WHERE fr.learner_id = $1 AND fr.term_id = $2
+       ORDER BY s.subject_name`,
+      [learnerId, termId]
+    )
+    : await pool.query(
+      `SELECT er.learner_id, er.subject_id, er.stream_id,
+              CASE WHEN es.exam_type = 'mid_term' THEN er.score END AS mid_term_score,
+              CASE WHEN es.exam_type = 'end_of_term' THEN er.score END AS end_term_score,
+              er.score AS final_score,
+              gs.label AS grade,
+              gs.remarks,
+              s.subject_name, s.subject_code
+       FROM exam_results er
+       JOIN exam_sessions es ON er.exam_session_id = es.id
+       JOIN subjects s ON er.subject_id = s.id
+       LEFT JOIN grading_scales gs
+         ON er.score IS NOT NULL
+        AND er.score >= gs.min_score
+        AND er.score <= gs.max_score
+        AND gs.is_active = TRUE
+       WHERE er.learner_id = $1
+         AND es.term_id = $2
+         AND es.exam_type = $3
+       ORDER BY s.subject_name`,
+      [learnerId, termId, REPORT_MODES[reportMode].examType]
+    );
 
   const reportCard = await pool.query(
     `SELECT * FROM report_cards WHERE learner_id = $1 AND term_id = $2`,
     [learnerId, termId]
   );
 
-  const summary = await pool.query(
-    `SELECT ROUND(AVG(final_score), 2) AS overall_average,
-            MIN(stream_rank) AS stream_position,
-            MIN(class_rank) AS class_position,
-            COUNT(*) AS total_subjects
-     FROM final_results
-     WHERE learner_id = $1 AND term_id = $2`,
-    [learnerId, termId]
-  );
+  const summary = reportMode === 'combined'
+    ? await pool.query(
+      `SELECT ROUND(AVG(final_score), 2) AS overall_average,
+              MIN(stream_rank) AS stream_position,
+              MIN(class_rank) AS class_position,
+              COUNT(*) AS total_subjects
+       FROM final_results
+       WHERE learner_id = $1 AND term_id = $2`,
+      [learnerId, termId]
+    )
+    : await pool.query(
+      `SELECT ROUND(AVG(er.score), 2) AS overall_average,
+              NULL::integer AS stream_position,
+              NULL::integer AS class_position,
+              COUNT(*) AS total_subjects
+       FROM exam_results er
+       JOIN exam_sessions es ON er.exam_session_id = es.id
+       WHERE er.learner_id = $1
+         AND es.term_id = $2
+         AND es.exam_type = $3`,
+      [learnerId, termId, REPORT_MODES[reportMode].examType]
+    );
 
   const schoolConfig = await pool.query(
     `SELECT config_key, config_value FROM system_config
@@ -62,6 +107,7 @@ const _getLearnerReportData = async (learnerId, termId) => {
     summary: summary.rows[0],
     school,
     grading_scales: await getAllGradingScales(),
+    report_mode: REPORT_MODES[reportMode],
   };
 };
 
@@ -69,7 +115,7 @@ const _getLearnerReportData = async (learnerId, termId) => {
 const getLearnerReport = async (req, res) => {
   try {
     const { learnerId, termId } = req.params;
-    const data = await _getLearnerReportData(learnerId, termId);
+    const data = await _getLearnerReportData(learnerId, termId, req.query.mode);
     if (!data.learner)
       return res.status(404).json({ success: false, message: 'Learner or term not found' });
     res.json({ success: true, data });
@@ -167,7 +213,7 @@ const getSubjectReport = async (req, res) => {
   }
 };
 
-// ─── PDF Generation Helper ────────────────────────────────────────────────────
+// â”€â”€â”€ PDF Generation Helper â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 const _generatePdf = async (htmlContent) => {
   const browser = await puppeteer.launch({
     headless: 'new',
@@ -184,16 +230,24 @@ const _generatePdf = async (htmlContent) => {
   return pdf;
 };
 
-// ─── HTML Templates ───────────────────────────────────────────────────────────
+// â”€â”€â”€ HTML Templates â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 const _buildLearnerReportHtml = (data) => {
-  const { learner, results, summary, report_card, school, grading_scales } = data;
+  const { learner, results, summary, report_card, school, grading_scales, report_mode } = data;
+  const isCombined = !report_mode.examType;
+  const scoreHeader = report_mode.examType === 'mid_term' ? 'Mid Term' : 'End of Term';
+  const fmt = (value) => value === null || value === undefined ? '-' : Number(value).toFixed(1).replace(/\.0$/, '');
+  const total = results.reduce((sum, r) => sum + (Number(r.final_score) || 0), 0);
+  const average = summary.overall_average || (results.length ? (total / results.length).toFixed(2) : null);
+  const overallScale = grading_scales.find(g => average !== null && Number(average) >= Number(g.min_score) && Number(average) <= Number(g.max_score));
 
   const rows = results.map(r => `
     <tr>
       <td>${r.subject_name}</td>
-      <td class="center">${r.mid_term_score !== null ? r.mid_term_score + '%' : '-'}</td>
-      <td class="center">${r.end_term_score !== null ? r.end_term_score + '%' : '-'}</td>
-      <td class="center bold">${r.final_score !== null ? r.final_score + '%' : '-'}</td>
+      ${isCombined
+        ? `<td class="center">${fmt(r.mid_term_score)}</td>
+           <td class="center">${fmt(r.end_term_score)}</td>
+           <td class="center bold">${fmt(r.final_score)}</td>`
+        : `<td class="center bold">${fmt(r.final_score)}</td>`}
       <td class="center grade">${r.grade || '-'}</td>
       <td>${r.remarks || ''}</td>
     </tr>`).join('');
@@ -212,65 +266,53 @@ const _buildLearnerReportHtml = (data) => {
 <meta charset="UTF-8">
 <style>
   * { margin: 0; padding: 0; box-sizing: border-box; }
-  body { font-family: Arial, sans-serif; font-size: 12px; color: #222; padding: 20px; }
-  .header { text-align: center; border-bottom: 3px double #333; padding-bottom: 10px; margin-bottom: 16px; }
-  .header h1 { font-size: 20px; font-weight: bold; }
-  .header h2 { font-size: 14px; color: #555; margin-top: 2px; }
-  .header h3 { font-size: 13px; margin-top: 6px; }
-  .info-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 6px 20px; margin-bottom: 16px; padding: 10px; background: #f9f9f9; border: 1px solid #ddd; border-radius: 4px; }
+  body { font-family: Arial, sans-serif; font-size: 10px; color: #111; padding: 0 12px 10px; }
+  .letterhead-space { height: 30mm; }
+  .report-title { text-align: center; font-size: 15px; font-weight: 800; text-transform: uppercase; margin-bottom: 6px; }
+  .info-grid { display: grid; grid-template-columns: 1.1fr 1fr 1fr; gap: 0; margin-bottom: 8px; border: 1px solid #93c5fd; color: #0f172a; }
+  .info-grid div { padding: 5px 7px; border-right: 1px solid #bfdbfe; border-bottom: 1px solid #bfdbfe; min-height: 22px; }
+  .info-grid div:nth-child(3n) { border-right: 0; }
   .info-grid span { font-weight: bold; }
-  table { width: 100%; border-collapse: collapse; margin-bottom: 16px; }
-  th { background: #2c3e50; color: #fff; padding: 7px 8px; text-align: left; font-size: 11px; }
-  td { padding: 6px 8px; border-bottom: 1px solid #eee; }
-  tr:nth-child(even) { background: #f5f5f5; }
+  table { width: 100%; border-collapse: collapse; margin-bottom: 8px; }
+  th { background: #f8fafc; color: #111827; padding: 5px 6px; text-align: left; font-size: 9px; border: 1px solid #cbd5e1; text-transform: uppercase; }
+  td { padding: 5px 6px; border: 1px solid #d1d5db; }
   .center { text-align: center; }
   .bold { font-weight: bold; }
-  .grade { font-weight: bold; font-size: 13px; }
-  .summary-box { background: #eaf0fb; border: 1px solid #b3c6f7; border-radius: 4px; padding: 10px 16px; margin-bottom: 16px; display: flex; justify-content: space-between; }
-  .summary-box .item { text-align: center; }
-  .summary-box .item .val { font-size: 20px; font-weight: bold; color: #2c3e50; }
-  .summary-box .item .lbl { font-size: 10px; color: #555; }
-  .remarks-section { margin-bottom: 16px; }
-  .remarks-section h4 { font-size: 11px; color: #555; margin-bottom: 4px; }
-  .remarks-section p { border: 1px solid #ccc; border-radius: 4px; padding: 8px; min-height: 36px; background: #fafafa; }
-  .scale-title { font-size: 11px; font-weight: bold; margin-bottom: 4px; color: #555; }
-  .footer { margin-top: 20px; border-top: 1px solid #ccc; padding-top: 10px; display: flex; justify-content: space-between; font-size: 10px; color: #888; }
-  .sign-line { margin-top: 30px; display: flex; justify-content: space-between; }
+  .grade { font-weight: bold; }
+  .summary-table th, .summary-table td { text-align: center; font-weight: 700; }
+  .lower-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; align-items: start; }
+  .remarks-section { margin-bottom: 7px; border: 1px solid #d1d5db; min-height: 34px; padding: 7px; }
+  .remarks-section h4 { font-size: 10px; color: #1d4ed8; margin-bottom: 4px; }
+  .scale-title { font-size: 10px; font-weight: bold; margin-bottom: 4px; color: #111827; }
+  .footer { margin-top: 8px; display: flex; justify-content: space-between; font-size: 9px; color: #555; }
+  .sign-line { margin-top: 22px; display: flex; justify-content: space-between; }
   .sign-line div { text-align: center; }
-  .sign-line div .line { border-top: 1px solid #333; width: 160px; margin: 24px auto 4px; }
+  .sign-line div .line { border-top: 1px solid #333; width: 160px; margin: 20px auto 4px; }
 </style>
 </head>
 <body>
-  <div class="header">
-    <h1>${school.school_name || 'School Name'}</h1>
-    <h2>${school.school_motto || ''}</h2>
-    <h3>STUDENT REPORT CARD — TERM ${learner.term_number} &nbsp;|&nbsp; ${learner.year_name}</h3>
-  </div>
+  <div class="letterhead-space"></div>
+  <div class="report-title">${report_mode.title}</div>
 
   <div class="info-grid">
     <div>Name: <span>${learner.first_name} ${learner.middle_name || ''} ${learner.last_name}</span></div>
     <div>Adm No: <span>${learner.admission_number}</span></div>
+    <div>Sex: <span>${learner.gender || '-'}</span></div>
     <div>Class: <span>${learner.class_name} ${learner.stream_name || ''}</span></div>
-    <div>Gender: <span>${learner.gender}</span></div>
+    <div>Term: <span>${learner.term_number}</span></div>
+    <div>Year: <span>${learner.year_name}</span></div>
     <div>Class Teacher: <span>${learner.class_teacher_name || 'N/A'}</span></div>
     <div>Date of Birth: <span>${learner.date_of_birth ? new Date(learner.date_of_birth).toLocaleDateString() : 'N/A'}</span></div>
-  </div>
-
-  <div class="summary-box">
-    <div class="item"><div class="val">${summary.overall_average || 'N/A'}</div><div class="lbl">Overall Average (%)</div></div>
-    <div class="item"><div class="val">${summary.stream_position || 'N/A'}</div><div class="lbl">Stream Position</div></div>
-    <div class="item"><div class="val">${summary.class_position || 'N/A'}</div><div class="lbl">Class Position</div></div>
-    <div class="item"><div class="val">${summary.total_subjects || 0}</div><div class="lbl">Subjects</div></div>
-    <div class="item"><div class="val">${report_card?.days_present || '-'}</div><div class="lbl">Days Present</div></div>
+    <div>School: <span>${school.school_name || ''}</span></div>
   </div>
 
   <table>
     <thead>
       <tr>
         <th>Subject</th>
-        <th class="center">Mid Term (40%)</th>
-        <th class="center">End of Term (60%)</th>
-        <th class="center">Final Score</th>
+        ${isCombined
+          ? '<th class="center">Mid Term</th><th class="center">End of Term</th><th class="center">Average Mark</th>'
+          : `<th class="center">${scoreHeader}</th>`}
         <th class="center">Grade</th>
         <th>Remarks</th>
       </tr>
@@ -278,22 +320,37 @@ const _buildLearnerReportHtml = (data) => {
     <tbody>${rows}</tbody>
   </table>
 
-  <div class="remarks-section">
-    <h4>Class Teacher's Remarks</h4>
-    <p>${report_card?.class_teacher_remarks || '&nbsp;'}</p>
-  </div>
-  <div class="remarks-section">
-    <h4>Head Teacher's Remarks</h4>
-    <p>${report_card?.head_teacher_remarks || '&nbsp;'}</p>
-  </div>
-
-  <div class="scale-title">Grading Scale</div>
-  <table>
-    <thead>
-      <tr><th>Grade</th><th>Name</th><th>Score Range</th><th>Description</th></tr>
-    </thead>
-    <tbody>${scaleRows}</tbody>
+  <table class="summary-table">
+    <tr>
+      <th>Total</th><th>Average Score</th><th>Overall Descriptor</th><th>Stream Pos</th><th>Class Pos</th><th>Days Present</th>
+    </tr>
+    <tr>
+      <td>${fmt(total)}</td><td>${average || 'N/A'}</td><td>${overallScale?.remarks || overallScale?.grade_name || '-'}</td>
+      <td>${summary.stream_position || 'N/A'}</td><td>${summary.class_position || 'N/A'}</td><td>${report_card?.days_present || '-'}</td>
+    </tr>
   </table>
+
+  <div class="lower-grid">
+    <div>
+      <div class="remarks-section">
+        <h4>Class Teacher's Remarks</h4>
+        ${report_card?.class_teacher_remarks || '&nbsp;'}
+      </div>
+      <div class="remarks-section">
+        <h4>Head Teacher's Remarks</h4>
+        ${report_card?.head_teacher_remarks || '&nbsp;'}
+      </div>
+    </div>
+    <div>
+      <div class="scale-title">Grading Scale</div>
+      <table>
+        <thead>
+          <tr><th>Grade</th><th>Name</th><th>Score Range</th><th>Description</th></tr>
+        </thead>
+        <tbody>${scaleRows}</tbody>
+      </table>
+    </div>
+  </div>
 
   <div class="sign-line">
     <div><div class="line"></div><div>Class Teacher</div></div>
@@ -308,19 +365,18 @@ const _buildLearnerReportHtml = (data) => {
 </body>
 </html>`;
 };
-
 // GET /api/reports/learner/:learnerId/term/:termId/pdf
 const getLearnerReportPdf = async (req, res) => {
   try {
     const { learnerId, termId } = req.params;
-    const data = await _getLearnerReportData(learnerId, termId);
+    const data = await _getLearnerReportData(learnerId, termId, req.query.mode);
     if (!data.learner)
       return res.status(404).json({ success: false, message: 'Learner or term not found' });
 
     const html = _buildLearnerReportHtml(data);
     const pdf = await _generatePdf(html);
 
-    const filename = `report_${data.learner.admission_number}_term${data.learner.term_number}.pdf`;
+    const filename = `report_${data.learner.admission_number}_term${data.learner.term_number}_${data.report_mode.filename}.pdf`;
     res.setHeader('Content-Type', 'application/pdf');
     res.setHeader('Content-Disposition', `attachment; filename="${filename}"`);
     res.send(pdf);
@@ -334,11 +390,20 @@ const getLearnerReportPdf = async (req, res) => {
 const getStreamReportPdf = async (req, res) => {
   try {
     const { streamId, termId } = req.params;
+    const mode = _reportMode(req.query.mode);
 
-    const learnerIds = await pool.query(
-      `SELECT DISTINCT learner_id FROM final_results WHERE stream_id = $1 AND term_id = $2`,
-      [streamId, termId]
-    );
+    const learnerIds = mode === 'combined'
+      ? await pool.query(
+        `SELECT DISTINCT learner_id FROM final_results WHERE stream_id = $1 AND term_id = $2`,
+        [streamId, termId]
+      )
+      : await pool.query(
+        `SELECT DISTINCT er.learner_id
+         FROM exam_results er
+         JOIN exam_sessions es ON er.exam_session_id = es.id
+         WHERE er.stream_id = $1 AND es.term_id = $2 AND es.exam_type = $3`,
+        [streamId, termId, REPORT_MODES[mode].examType]
+      );
 
     if (!learnerIds.rows.length)
       return res.status(404).json({ success: false, message: 'No results found for this stream and term' });
@@ -346,7 +411,7 @@ const getStreamReportPdf = async (req, res) => {
     // Build one HTML page per learner, concatenated
     const pages = await Promise.all(
       learnerIds.rows.map(async (row) => {
-        const data = await _getLearnerReportData(row.learner_id, termId);
+        const data = await _getLearnerReportData(row.learner_id, termId, mode);
         return _buildLearnerReportHtml(data);
       })
     );
@@ -366,7 +431,7 @@ const getStreamReportPdf = async (req, res) => {
 
     const pdf = await _generatePdf(combined);
     res.setHeader('Content-Type', 'application/pdf');
-    res.setHeader('Content-Disposition', `attachment; filename="stream_report_term.pdf"`);
+    res.setHeader('Content-Disposition', `attachment; filename="stream_report_${REPORT_MODES[mode].filename}.pdf"`);
     res.send(pdf);
   } catch (err) {
     console.error('getStreamReportPdf:', err);
@@ -378,33 +443,60 @@ const getStreamReportPdf = async (req, res) => {
 const getSubjectReportPdf = async (req, res) => {
   try {
     const { subjectId, termId } = req.params;
+    const mode = _reportMode(req.query.mode);
     const subject = await pool.query(`SELECT * FROM subjects WHERE id = $1`, [subjectId]);
     const termInfo = await pool.query(
       `SELECT t.term_number, ay.year_name FROM terms t JOIN academic_years ay ON t.academic_year_id = ay.id WHERE t.id = $1`,
       [termId]
     );
 
-    const results = await pool.query(
-      `SELECT fr.*, l.admission_number,
-              l.first_name || ' ' || l.last_name AS learner_name,
-              st.stream_name, c.class_name
-       FROM final_results fr
-       JOIN learners l ON fr.learner_id = l.id
-       LEFT JOIN streams st ON fr.stream_id = st.id
-       LEFT JOIN classes c ON st.class_id = c.id
-       WHERE fr.subject_id = $1 AND fr.term_id = $2
-       ORDER BY c.class_name, st.stream_name, l.admission_number`,
-      [subjectId, termId]
-    );
+    const results = mode === 'combined'
+      ? await pool.query(
+        `SELECT fr.*, l.admission_number,
+                l.first_name || ' ' || l.last_name AS learner_name,
+                st.stream_name, c.class_name
+         FROM final_results fr
+         JOIN learners l ON fr.learner_id = l.id
+         LEFT JOIN streams st ON fr.stream_id = st.id
+         LEFT JOIN classes c ON st.class_id = c.id
+         WHERE fr.subject_id = $1 AND fr.term_id = $2
+         ORDER BY c.class_name, st.stream_name, l.admission_number`,
+        [subjectId, termId]
+      )
+      : await pool.query(
+        `SELECT er.learner_id, er.subject_id, er.stream_id,
+                CASE WHEN es.exam_type = 'mid_term' THEN er.score END AS mid_term_score,
+                CASE WHEN es.exam_type = 'end_of_term' THEN er.score END AS end_term_score,
+                er.score AS final_score,
+                gs.label AS grade,
+                l.admission_number,
+                l.first_name || ' ' || l.last_name AS learner_name,
+                st.stream_name, c.class_name
+         FROM exam_results er
+         JOIN exam_sessions es ON er.exam_session_id = es.id
+         JOIN learners l ON er.learner_id = l.id
+         LEFT JOIN streams st ON er.stream_id = st.id
+         LEFT JOIN classes c ON st.class_id = c.id
+         LEFT JOIN grading_scales gs
+           ON er.score IS NOT NULL
+          AND er.score >= gs.min_score
+          AND er.score <= gs.max_score
+          AND gs.is_active = TRUE
+         WHERE er.subject_id = $1 AND es.term_id = $2 AND es.exam_type = $3
+         ORDER BY c.class_name, st.stream_name, l.admission_number`,
+        [subjectId, termId, REPORT_MODES[mode].examType]
+      );
 
     const rows = results.rows.map(r => `
       <tr>
         <td>${r.admission_number}</td>
         <td>${r.learner_name}</td>
         <td>${r.class_name} ${r.stream_name || ''}</td>
-        <td class="center">${r.mid_term_score !== null ? r.mid_term_score + '%' : '-'}</td>
-        <td class="center">${r.end_term_score !== null ? r.end_term_score + '%' : '-'}</td>
-        <td class="center bold">${r.final_score !== null ? r.final_score + '%' : '-'}</td>
+        ${mode === 'combined'
+          ? `<td class="center">${r.mid_term_score !== null ? r.mid_term_score + '%' : '-'}</td>
+             <td class="center">${r.end_term_score !== null ? r.end_term_score + '%' : '-'}</td>
+             <td class="center bold">${r.final_score !== null ? r.final_score + '%' : '-'}</td>`
+          : `<td class="center bold">${r.final_score !== null ? r.final_score + '%' : '-'}</td>`}
         <td class="center">${r.grade || '-'}</td>
       </tr>`).join('');
 
@@ -421,13 +513,15 @@ const getSubjectReportPdf = async (req, res) => {
   .center { text-align: center; } .bold { font-weight: bold; }
 </style>
 </head><body>
-  <h2>${subject.rows[0]?.subject_name} — Subject Report</h2>
+  <h2>${subject.rows[0]?.subject_name} - ${REPORT_MODES[mode].title}</h2>
   <h4>Term ${termInfo.rows[0]?.term_number} | ${termInfo.rows[0]?.year_name}</h4>
   <table>
     <thead>
       <tr><th>Adm No</th><th>Learner</th><th>Class/Stream</th>
-          <th class="center">Mid Term</th><th class="center">End of Term</th>
-          <th class="center">Final</th><th class="center">Grade</th></tr>
+          ${mode === 'combined'
+            ? '<th class="center">Mid Term</th><th class="center">End of Term</th><th class="center">Final</th>'
+            : `<th class="center">${REPORT_MODES[mode].title}</th>`}
+          <th class="center">Grade</th></tr>
     </thead>
     <tbody>${rows}</tbody>
   </table>
@@ -435,7 +529,7 @@ const getSubjectReportPdf = async (req, res) => {
 
     const pdf = await _generatePdf(html);
     res.setHeader('Content-Type', 'application/pdf');
-    res.setHeader('Content-Disposition', `attachment; filename="subject_report.pdf"`);
+    res.setHeader('Content-Disposition', `attachment; filename="subject_report_${REPORT_MODES[mode].filename}.pdf"`);
     res.send(pdf);
   } catch (err) {
     console.error('getSubjectReportPdf:', err);
@@ -447,21 +541,31 @@ const getSubjectReportPdf = async (req, res) => {
 const getClassReportPdf = async (req, res) => {
   try {
     const { classId, termId } = req.params;
+    const mode = _reportMode(req.query.mode);
 
-    const learnerIds = await pool.query(
-      `SELECT DISTINCT fr.learner_id
-       FROM final_results fr
-       JOIN streams st ON fr.stream_id = st.id
-       WHERE st.class_id = $1 AND fr.term_id = $2`,
-      [classId, termId]
-    );
+    const learnerIds = mode === 'combined'
+      ? await pool.query(
+        `SELECT DISTINCT fr.learner_id
+         FROM final_results fr
+         JOIN streams st ON fr.stream_id = st.id
+         WHERE st.class_id = $1 AND fr.term_id = $2`,
+        [classId, termId]
+      )
+      : await pool.query(
+        `SELECT DISTINCT er.learner_id
+         FROM exam_results er
+         JOIN exam_sessions es ON er.exam_session_id = es.id
+         JOIN streams st ON er.stream_id = st.id
+         WHERE st.class_id = $1 AND es.term_id = $2 AND es.exam_type = $3`,
+        [classId, termId, REPORT_MODES[mode].examType]
+      );
 
     if (!learnerIds.rows.length)
       return res.status(404).json({ success: false, message: 'No results found for this class and term' });
 
     const pages = await Promise.all(
       learnerIds.rows.map(async (row) => {
-        const data = await _getLearnerReportData(row.learner_id, termId);
+        const data = await _getLearnerReportData(row.learner_id, termId, mode);
         return _buildLearnerReportHtml(data);
       })
     );
@@ -477,7 +581,7 @@ const getClassReportPdf = async (req, res) => {
 
     const pdf = await _generatePdf(combined);
     res.setHeader('Content-Type', 'application/pdf');
-    res.setHeader('Content-Disposition', `attachment; filename="class_report.pdf"`);
+    res.setHeader('Content-Disposition', `attachment; filename="class_report_${REPORT_MODES[mode].filename}.pdf"`);
     res.send(pdf);
   } catch (err) {
     console.error('getClassReportPdf:', err);
@@ -489,3 +593,4 @@ module.exports = {
   getLearnerReport, getStreamReport, getSubjectReport,
   getLearnerReportPdf, getStreamReportPdf, getSubjectReportPdf, getClassReportPdf,
 };
+
