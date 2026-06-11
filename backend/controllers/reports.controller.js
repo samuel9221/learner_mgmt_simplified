@@ -2,7 +2,7 @@ const pool = require('../config/database');
 const puppeteer = require('puppeteer');
 const { getAllGradingScales } = require('../utils/grading.service');
 
-// â”€â”€â”€ Shared: fetch learner report data â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+//Shared: fetch learner report data â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 const REPORT_MODES = {
   mid_term: { title: 'MID TERM REPORT', filename: 'mid_term', examType: 'mid_term' },
   end_of_term: { title: 'END OF TERM REPORT', filename: 'end_of_term', examType: 'end_of_term' },
@@ -213,24 +213,26 @@ const getSubjectReport = async (req, res) => {
   }
 };
 
-// â”€â”€â”€ PDF Generation Helper â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 const _generatePdf = async (htmlContent) => {
   const browser = await puppeteer.launch({
-    headless: 'new',
-    args: ['--no-sandbox', '--disable-setuid-sandbox'],
+    headless: true,
+    args: ['--no-sandbox', '--disable-setuid-sandbox', '--disable-dev-shm-usage', '--disable-gpu'],
   });
   const page = await browser.newPage();
   await page.setContent(htmlContent, { waitUntil: 'networkidle0' });
+  //await page.setContent(htmlContent, { waitUntil: 'domcontentloaded', timeout: 120000});
   const pdf = await page.pdf({
     format: 'A4',
     printBackground: true,
     margin: { top: '15mm', right: '12mm', bottom: '15mm', left: '12mm' },
-  });
+  }); 
   await browser.close();
-  return pdf;
+  // Ensure PDF is a proper Buffer
+  return Buffer.isBuffer(pdf) ? pdf : Buffer.from(pdf);
+  //console.log("HTML length:", htmlContent.length);
 };
 
-// â”€â”€â”€ HTML Templates â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+// HTML Templates
 const _buildLearnerReportHtml = (data) => {
   const { learner, results, summary, report_card, school, grading_scales, report_mode } = data;
   const isCombined = !report_mode.examType;
@@ -376,10 +378,19 @@ const getLearnerReportPdf = async (req, res) => {
     const html = _buildLearnerReportHtml(data);
     const pdf = await _generatePdf(html);
 
+    if (!Buffer.isBuffer(pdf) || pdf.length === 0) {
+      console.error('PDF generation returned invalid buffer');
+      return res.status(500).json({ success: false, message: 'Failed to generate valid PDF' });
+    }
+
     const filename = `report_${data.learner.admission_number}_term${data.learner.term_number}_${data.report_mode.filename}.pdf`;
     res.setHeader('Content-Type', 'application/pdf');
-    res.setHeader('Content-Disposition', `attachment; filename="${filename}"`);
-    res.send(pdf);
+    res.setHeader('Content-Length', pdf.length);
+    res.setHeader('Content-Disposition', `attachment; filename="${encodeURIComponent(filename)}"`);
+    res.setHeader('Cache-Control', 'no-cache, no-store, must-revalidate');
+    res.setHeader('Pragma', 'no-cache');
+    res.setHeader('Expires', '0');
+    res.end(pdf);
   } catch (err) {
     console.error('getLearnerReportPdf:', err);
     res.status(500).json({ success: false, message: 'Failed to generate PDF' });
@@ -416,23 +427,46 @@ const getStreamReportPdf = async (req, res) => {
       })
     );
 
+    // Extract styles and body from each page
+    const extractStylesAndBody = (html) => {
+      const styleMatch = html.match(/<style>([\s\S]*?)<\/style>/i);
+      const styles = styleMatch ? styleMatch[1] : '';
+      const bodyContent = html.replace(/<!DOCTYPE html>.*?<body>/s, '').replace(/<\/body>.*?<\/html>/s, '');
+      return { styles, bodyContent };
+    };
+
+    // Consolidate all styles and pages
+    const allStyles = pages.map(extractStylesAndBody).map(p => p.styles).join('\n');
+    const bodyPages = pages.map(extractStylesAndBody).map(p => p.bodyContent);
+
     // Combine with page breaks
     const combined = `<!DOCTYPE html><html><head><meta charset="UTF-8">
       <style>
         .page-break { page-break-after: always; }
         body { margin: 0; padding: 0; }
+        ${allStyles}
       </style>
     </head><body>
-      ${pages.map((p, i) => {
-        const bodyContent = p.replace(/<!DOCTYPE html>.*?<body>/s, '').replace(/<\/body>.*?<\/html>/s, '');
-        return `<div style="padding: 20px;">${bodyContent}</div>${i < pages.length - 1 ? '<div class="page-break"></div>' : ''}`;
+      ${bodyPages.map((p, i) => {
+        return `<div>${p}</div>${i < bodyPages.length - 1 ? '<div class="page-break"></div>' : ''}`;
       }).join('')}
     </body></html>`;
 
     const pdf = await _generatePdf(combined);
+
+    if (!Buffer.isBuffer(pdf) || pdf.length === 0) {
+      console.error('PDF generation returned invalid buffer');
+      return res.status(500).json({ success: false, message: 'Failed to generate valid PDF' });
+    }
+
+    const filename = `stream_report_${REPORT_MODES[mode].filename}.pdf`;
     res.setHeader('Content-Type', 'application/pdf');
-    res.setHeader('Content-Disposition', `attachment; filename="stream_report_${REPORT_MODES[mode].filename}.pdf"`);
-    res.send(pdf);
+    res.setHeader('Content-Length', pdf.length);
+    res.setHeader('Content-Disposition', `attachment; filename="${encodeURIComponent(filename)}"`);
+    res.setHeader('Cache-Control', 'no-cache, no-store, must-revalidate');
+    res.setHeader('Pragma', 'no-cache');
+    res.setHeader('Expires', '0');
+    res.end(pdf);
   } catch (err) {
     console.error('getStreamReportPdf:', err);
     res.status(500).json({ success: false, message: 'Failed to generate PDF' });
@@ -528,9 +562,20 @@ const getSubjectReportPdf = async (req, res) => {
 </body></html>`;
 
     const pdf = await _generatePdf(html);
+
+    if (!Buffer.isBuffer(pdf) || pdf.length === 0) {
+      console.error('PDF generation returned invalid buffer');
+      return res.status(500).json({ success: false, message: 'Failed to generate valid PDF' });
+    }
+
+    const filename = `subject_report_${REPORT_MODES[mode].filename}.pdf`;
     res.setHeader('Content-Type', 'application/pdf');
-    res.setHeader('Content-Disposition', `attachment; filename="subject_report_${REPORT_MODES[mode].filename}.pdf"`);
-    res.send(pdf);
+    res.setHeader('Content-Length', pdf.length);
+    res.setHeader('Content-Disposition', `attachment; filename="${encodeURIComponent(filename)}"`);
+    res.setHeader('Cache-Control', 'no-cache, no-store, must-revalidate');
+    res.setHeader('Pragma', 'no-cache');
+    res.setHeader('Expires', '0');
+    res.end(pdf);
   } catch (err) {
     console.error('getSubjectReportPdf:', err);
     res.status(500).json({ success: false, message: 'Failed to generate PDF' });
@@ -570,19 +615,45 @@ const getClassReportPdf = async (req, res) => {
       })
     );
 
+    // Extract styles and body from each page
+    const extractStylesAndBody = (html) => {
+      const styleMatch = html.match(/<style>([\s\S]*?)<\/style>/i);
+      const styles = styleMatch ? styleMatch[1] : '';
+      const bodyContent = html.replace(/<!DOCTYPE html>.*?<body>/s, '').replace(/<\/body>.*?<\/html>/s, '');
+      return { styles, bodyContent };
+    };
+
+    // Consolidate all styles and pages
+    const allStyles = pages.map(extractStylesAndBody).map(p => p.styles).join('\n');
+    const bodyPages = pages.map(extractStylesAndBody).map(p => p.bodyContent);
+
     const combined = `<!DOCTYPE html><html><head><meta charset="UTF-8">
-      <style>.page-break { page-break-after: always; } body { margin: 0; padding: 0; }</style>
+      <style>
+        .page-break { page-break-after: always; }
+        body { margin: 0; padding: 0; }
+        ${allStyles}
+      </style>
     </head><body>
-      ${pages.map((p, i) => {
-        const bodyContent = p.replace(/<!DOCTYPE html>.*?<body>/s, '').replace(/<\/body>.*?<\/html>/s, '');
-        return `<div style="padding: 20px;">${bodyContent}</div>${i < pages.length - 1 ? '<div class="page-break"></div>' : ''}`;
+      ${bodyPages.map((p, i) => {
+        return `<div>${p}</div>${i < bodyPages.length - 1 ? '<div class="page-break"></div>' : ''}`;
       }).join('')}
     </body></html>`;
 
     const pdf = await _generatePdf(combined);
+
+    if (!Buffer.isBuffer(pdf) || pdf.length === 0) {
+      console.error('PDF generation returned invalid buffer');
+      return res.status(500).json({ success: false, message: 'Failed to generate valid PDF' });
+    }
+
+    const filename = `class_report_${REPORT_MODES[mode].filename}.pdf`;
     res.setHeader('Content-Type', 'application/pdf');
-    res.setHeader('Content-Disposition', `attachment; filename="class_report_${REPORT_MODES[mode].filename}.pdf"`);
-    res.send(pdf);
+    res.setHeader('Content-Length', pdf.length);
+    res.setHeader('Content-Disposition', `attachment; filename="${encodeURIComponent(filename)}"`);
+    res.setHeader('Cache-Control', 'no-cache, no-store, must-revalidate');
+    res.setHeader('Pragma', 'no-cache');
+    res.setHeader('Expires', '0');
+    res.end(pdf);
   } catch (err) {
     console.error('getClassReportPdf:', err);
     res.status(500).json({ success: false, message: 'Failed to generate PDF' });
@@ -593,4 +664,3 @@ module.exports = {
   getLearnerReport, getStreamReport, getSubjectReport,
   getLearnerReportPdf, getStreamReportPdf, getSubjectReportPdf, getClassReportPdf,
 };
-

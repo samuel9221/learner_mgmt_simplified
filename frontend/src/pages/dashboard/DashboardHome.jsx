@@ -14,7 +14,9 @@ import {
   FiBookOpen,
   FiUserCheck
 } from 'react-icons/fi';
+import toast from 'react-hot-toast';
 import { useAuthStore } from '../../context/authStore';
+import { getDashboardStats } from '../../services/dashboardService';
 import StatCard from '../../components/dashboard/StatCard';
 import QuickActions from '../../components/dashboard/QuickActions';
 import RecentActivity from '../../components/dashboard/RecentActivity';

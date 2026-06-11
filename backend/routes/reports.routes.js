@@ -1,33 +1,55 @@
 const express = require('express');
-const router = express.Router();
+const router  = express.Router();
 const reportsController = require('../controllers/reports.controller');
 const { authenticate } = require('../middleware/auth');
 
-router.use(authenticate);
+// ─────────────────────────────────────────────────────────────────────────────
+// Special middleware for PDF routes:
+// ─────────────────────────────────────────────────────────────────────────────
+const authenticatePdf = (req, res, next) => {
+  // If a token is in the query string, inject it as a header so the
+  // existing authenticate middleware can read it normally.
+  if (req.query.token && !req.headers['authorization']) {
+    req.headers['authorization'] = `Bearer ${req.query.token}`;
+  }
+  return authenticate(req, res, next);
+};
 
-// ── In-app view (JSON) ──────────────────────────────────────────────────────
+// ── JSON (in-app view) — standard header auth ─────────────────────────────
+router.get('/learner/:learnerId/term/:termId',
+  authenticate,
+  reportsController.getLearnerReport
+);
 
-// GET /api/reports/learner/:learnerId/term/:termId          - Individual learner report card (JSON)
-router.get('/learner/:learnerId/term/:termId', reportsController.getLearnerReport);
+router.get('/stream/:streamId/term/:termId',
+  authenticate,
+  reportsController.getStreamReport
+);
 
-// GET /api/reports/stream/:streamId/term/:termId            - Full stream report (JSON)
-router.get('/stream/:streamId/term/:termId', reportsController.getStreamReport);
+router.get('/subject/:subjectId/term/:termId',
+  authenticate,
+  reportsController.getSubjectReport
+);
 
-// GET /api/reports/subject/:subjectId/term/:termId          - Subject report (JSON)
-router.get('/subject/:subjectId/term/:termId', reportsController.getSubjectReport);
+// ── PDF Export — accepts token from query param OR header ─────────────────
+router.get('/learner/:learnerId/term/:termId/pdf',
+  authenticatePdf,
+  reportsController.getLearnerReportPdf
+);
 
-// ── PDF Export (puppeteer) ──────────────────────────────────────────────────
+router.get('/stream/:streamId/term/:termId/pdf',
+  authenticatePdf,
+  reportsController.getStreamReportPdf
+);
 
-// GET /api/reports/learner/:learnerId/term/:termId/pdf      - Single learner PDF report card
-router.get('/learner/:learnerId/term/:termId/pdf', reportsController.getLearnerReportPdf);
+router.get('/subject/:subjectId/term/:termId/pdf',
+  authenticatePdf,
+  reportsController.getSubjectReportPdf
+);
 
-// GET /api/reports/stream/:streamId/term/:termId/pdf        - All learners in stream (bulk PDF)
-router.get('/stream/:streamId/term/:termId/pdf', reportsController.getStreamReportPdf);
-
-// GET /api/reports/subject/:subjectId/term/:termId/pdf      - Subject analysis PDF
-router.get('/subject/:subjectId/term/:termId/pdf', reportsController.getSubjectReportPdf);
-
-// GET /api/reports/class/:classId/term/:termId/pdf          - Full class PDF (all streams)
-router.get('/class/:classId/term/:termId/pdf', reportsController.getClassReportPdf);
+router.get('/class/:classId/term/:termId/pdf',
+  authenticatePdf,
+  reportsController.getClassReportPdf
+);
 
 module.exports = router;
