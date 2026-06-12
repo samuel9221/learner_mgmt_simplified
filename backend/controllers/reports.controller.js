@@ -72,8 +72,8 @@ const _getLearnerReportData = async (learnerId, termId, mode = 'combined') => {
   const summary = reportMode === 'combined'
     ? await pool.query(
       `SELECT ROUND(AVG(final_score), 2) AS overall_average,
-              MIN(stream_rank) AS stream_position,
-              MIN(class_rank) AS class_position,
+              MAX(stream_rank) AS stream_position,
+              MAX(class_rank) AS class_position,
               COUNT(*) AS total_subjects
        FROM final_results
        WHERE learner_id = $1 AND term_id = $2`,

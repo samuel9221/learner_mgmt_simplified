@@ -4,9 +4,10 @@
 // ============================================================================
 
 import React, { useState, useEffect } from 'react';
-import { FiPlus, FiEdit2, FiTrash2, FiSearch, FiShield, FiUser } from 'react-icons/fi';
+import { FiPlus, FiEdit2, FiTrash2, FiSearch, FiShield, FiUser, FiDownload } from 'react-icons/fi';
 import toast from 'react-hot-toast';
 import { getUsers, createUser, updateUser, deleteUser } from '../../services/userService';
+import * as excelService from '../../services/excelService';
 import UserFormModal from '../../components/users/UserFormModal';
 
 const UsersPage = () => {
@@ -123,6 +124,17 @@ const UsersPage = () => {
     }
   };
 
+  const handleDownloadUsers = async () => {
+    try {
+      await excelService.downloadUsersExcel();
+      toast.success('Users list downloaded successfully');
+    } catch (error) {
+      const message = error.response?.data?.message || 'Failed to download users list';
+      toast.error(message);
+      console.error('Error downloading users:', error);
+    }
+  };
+
   if (loading) {
     return (
       <div className="flex items-center justify-center h-64">
@@ -139,13 +151,22 @@ const UsersPage = () => {
           <h1 className="text-3xl font-bold text-gray-900">Users</h1>
           <p className="text-gray-600 mt-1">{users.length} total users</p>
         </div>
-        <button
-          onClick={handleCreateUser}
-          className="flex items-center space-x-2 bg-blue-600 text-white px-4 py-2 rounded-lg hover:bg-blue-700 transition-colors"
-        >
-          <FiPlus className="w-5 h-5" />
-          <span>Add User</span>
-        </button>
+        <div className="flex items-center space-x-2">
+          <button
+            onClick={handleDownloadUsers}
+            className="flex items-center space-x-2 bg-green-600 text-white px-4 py-2 rounded-lg hover:bg-green-700 transition-colors"
+          >
+            <FiDownload className="w-5 h-5" />
+            <span>Download Excel</span>
+          </button>
+          <button
+            onClick={handleCreateUser}
+            className="flex items-center space-x-2 bg-blue-600 text-white px-4 py-2 rounded-lg hover:bg-blue-700 transition-colors"
+          >
+            <FiPlus className="w-5 h-5" />
+            <span>Add User</span>
+          </button>
+        </div>
       </div>
 
       {/* Filters */}

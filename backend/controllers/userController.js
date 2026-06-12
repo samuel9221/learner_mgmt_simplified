@@ -303,10 +303,59 @@ const deleteUser = async (req, res) => {
   }
 };
 
+/**
+ * @route   GET /api/users/download/excel
+ * @desc    Download all users as Excel file
+ * @access  Private (Admin)
+ */
+const downloadUsersExcel = async (req, res) => {
+  try {
+    const { exportUsers } = require('../utils/excelExport');
+
+    // Get all users
+    const result = await query(
+      `SELECT 
+        id, username, email, role, first_name, last_name, 
+        phone_number, is_active, created_at, last_login
+       FROM users
+       ORDER BY first_name, last_name`
+    );
+
+    const users = result.rows;
+
+    if (users.length === 0) {
+      return res.status(404).json({
+        success: false,
+        message: 'No users found',
+      });
+    }
+
+    // Generate Excel file
+    const buffer = await exportUsers(users);
+
+    // Set response headers
+    res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
+    res.setHeader(
+      'Content-Disposition',
+      `attachment; filename="Users_${new Date().toISOString().split('T')[0]}.xlsx"`
+    );
+
+    res.send(buffer);
+  } catch (error) {
+    console.error('Error downloading users:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Failed to generate users list',
+      error: error.message,
+    });
+  }
+};
+
 module.exports = {
   getAllUsers,
   getUserById,
   createUser,
   updateUser,
-  deleteUser
+  deleteUser,
+  downloadUsersExcel,
 };

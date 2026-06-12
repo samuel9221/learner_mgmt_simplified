@@ -11,6 +11,9 @@ router.get('/term/:termId', finalResultsController.getByTerm);
 // GET  /api/final-results/term/:termId/stream/:streamId         - Final results by stream
 router.get('/term/:termId/stream/:streamId', finalResultsController.getByTermAndStream);
 
+// GET  /api/final-results/term/:termId/stream/:streamId/download - Download stream marks as Excel
+router.get('/term/:termId/stream/:streamId/download', finalResultsController.downloadStreamMarks);
+
 // GET  /api/final-results/learner/:learnerId                    - All final results for learner
 router.get('/learner/:learnerId', finalResultsController.getByLearner);
 

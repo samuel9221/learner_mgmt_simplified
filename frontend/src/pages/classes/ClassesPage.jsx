@@ -4,9 +4,10 @@
 // ============================================================================
 
 import React, { useState, useEffect } from 'react';
-import { FiPlus, FiUsers, FiUser, FiEdit2, FiTrash2 } from 'react-icons/fi';
+import { FiPlus, FiUsers, FiUser, FiEdit2, FiTrash2, FiDownload } from 'react-icons/fi';
 import toast from 'react-hot-toast';
 import * as classService from '../../services/classService';
+import * as excelService from '../../services/excelService';
 import { Link } from 'react-router-dom';
 
 const ClassesPage = () => {
@@ -145,6 +146,17 @@ const ClassesPage = () => {
     return teacher ? `${teacher.first_name} ${teacher.last_name}` : 'Not assigned';
   };
 
+  const handleDownloadClassList = async (stream) => {
+    try {
+      await excelService.downloadStreamClassList(stream.id);
+      toast.success('Class list downloaded successfully');
+    } catch (error) {
+      const message = error.response?.data?.message || 'Failed to download class list';
+      toast.error(message);
+      console.error('Error downloading class list:', error);
+    }
+  };
+
   if (loading) {
     return (
       <div className="flex items-center justify-center h-64">
@@ -219,6 +231,16 @@ const ClassesPage = () => {
                       </div>
                     </div>
                     <div className="flex items-center space-x-2">
+                      <button
+                        onClick={(e) => {
+                          e.preventDefault();
+                          handleDownloadClassList(stream);
+                        }}
+                        className="p-2 text-green-600 hover:bg-green-100 rounded transition-colors"
+                        title="Download class list as Excel"
+                      >
+                        <FiDownload className="w-4 h-4" />
+                      </button>
                       <button
                         onClick={(e) => {
                           e.preventDefault();

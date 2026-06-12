@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useState } from "react";
 import api from "../../services/api";
+import * as excelService from "../../services/excelService";
 
 const get = async (url) => {
   const response = await api.get(url);
@@ -250,6 +251,16 @@ export default function FinalResults() {
     }
   };
 
+  const downloadExcel = async () => {
+    try {
+      await excelService.downloadStreamMarks(selectedTerm, selectedStream);
+      flash("success", "Stream marks downloaded as Excel.");
+    } catch (e) {
+      const message = e.response?.data?.message;
+      flash("error", message || e.message || "Failed to download stream marks");
+    }
+  };
+
   return (
     <div style={S.page}>
       {/* Header */}
@@ -267,6 +278,12 @@ export default function FinalResults() {
           <div style={{ display: "flex", gap: 10 }}>
             <button style={S.btnOutline} onClick={handleCompute} disabled={computing}>
               {computing ? "Computing…" : "⟳ Recompute"}
+            </button>
+            <button
+              style={{ ...S.btnPrimary, display: "inline-flex", alignItems: "center", gap: 6 }}
+              onClick={() => downloadExcel()}
+            >
+              📊 Export Excel
             </button>
             <button
               style={{ ...S.btnPrimary, display: "inline-flex", alignItems: "center", gap: 6 }}

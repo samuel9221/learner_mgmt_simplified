@@ -307,8 +307,84 @@ const _computeRankings = async (client, termId) => {
   `, [termId]);
 };
 
+// GET /api/final-results/term/:termId/stream/:streamId/download
+const downloadStreamMarks = async (req, res) => {
+  try {
+    const { termId, streamId } = req.params;
+    const { pool } = require('../config/database');
+    const { exportStreamMarks } = require('../utils/excelExport');
+
+    // Get term and stream details
+    const [termRes, streamRes] = await Promise.all([
+      pool.query(
+        `SELECT t.term_number, ay.year_name 
+         FROM terms t
+         JOIN academic_years ay ON t.academic_year_id = ay.id
+         WHERE t.id = $1`,
+        [termId]
+      ),
+      pool.query(
+        `SELECT s.stream_name, c.class_name
+         FROM streams s
+         JOIN classes c ON s.class_id = c.id
+         WHERE s.id = $1`,
+        [streamId]
+      ),
+    ]);
+
+    if (termRes.rows.length === 0 || streamRes.rows.length === 0) {
+      return res.status(404).json({
+        success: false,
+        message: 'Term or stream not found',
+      });
+    }
+
+    const term = termRes.rows[0];
+    const stream = streamRes.rows[0];
+    const termName = `${term.year_name} - Term ${term.term_number}`;
+
+    // Get final results for this term and stream
+    const resultsRes = await pool.query(
+      `SELECT fr.*,
+              l.first_name, l.last_name, l.admission_number,
+              s.subject_name, s.subject_code
+       FROM final_results fr
+       JOIN learners l ON fr.learner_id = l.id
+       JOIN subjects s ON fr.subject_id = s.id
+       WHERE fr.term_id = $1 AND fr.stream_id = $2
+       ORDER BY l.admission_number, s.subject_name`,
+      [termId, streamId]
+    );
+
+    const results = resultsRes.rows;
+
+    if (results.length === 0) {
+      return res.status(404).json({
+        success: false,
+        message: 'No results found for this stream and term',
+      });
+    }
+
+    // Generate Excel file
+    const buffer = await exportStreamMarks(results, stream.class_name, stream.stream_name, termName);
+
+    // Set response headers
+    res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
+    res.setHeader(
+      'Content-Disposition',
+      `attachment; filename="StreamMarks_${stream.class_name}_${stream.stream_name}_${term.year_name}_T${term.term_number}_${new Date().toISOString().split('T')[0]}.xlsx"`
+    );
+
+    res.send(buffer);
+  } catch (err) {
+    console.error('downloadStreamMarks:', err);
+    res.status(500).json({ success: false, message: 'Server error' });
+  }
+};
+
 module.exports = {
   getByTerm, getByTermAndStream, getByLearner,
   getLearnerTermResults, getById,
   computeForTerm, computeForLearner, update,
+  downloadStreamMarks,
 };

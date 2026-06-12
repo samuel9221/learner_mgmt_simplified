@@ -14,6 +14,7 @@ const {
   updateStream,
   deleteStream,
   getAvailableTeachers,
+  downloadStreamClassList,
 } = require('../controllers/classController');
 
 const {
@@ -28,6 +29,7 @@ router.use(authenticate);
 router.get('/', getAllClasses);
 router.get('/teachers/available', getAvailableTeachers);
 router.get('/:id', getClassById);
+router.get('/streams/:streamId/download-class-list', downloadStreamClassList);
 
 // Admin only routes
 router.post('/', authorizeAdmin, createClass);

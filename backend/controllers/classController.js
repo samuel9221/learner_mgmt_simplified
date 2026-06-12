@@ -491,6 +491,74 @@ const getAvailableTeachers = async (req, res) => {
   }
 };
 
+/**
+ * @route   GET /api/classes/streams/:streamId/download-class-list
+ * @desc    Download class list for a stream as Excel file
+ * @access  Private
+ */
+const downloadStreamClassList = async (req, res) => {
+  try {
+    const { streamId } = req.params;
+    const { excelExport } = require('../utils/excelExport');
+
+    // Get stream details
+    const streamResult = await query(
+      `SELECT s.*, c.class_name 
+       FROM streams s
+       JOIN classes c ON s.class_id = c.id
+       WHERE s.id = $1`,
+      [streamId]
+    );
+
+    if (streamResult.rows.length === 0) {
+      return res.status(404).json({
+        success: false,
+        message: 'Stream not found',
+      });
+    }
+
+    const stream = streamResult.rows[0];
+
+    // Get learners enrolled in this stream
+    const learnersResult = await query(
+      `SELECT DISTINCT
+        l.id,
+        l.admission_number,
+        l.first_name,
+        l.last_name,
+        l.gender,
+        l.email
+       FROM learners l
+       JOIN learner_enrollments le ON l.id = le.learner_id
+       WHERE le.stream_id = $1
+       ORDER BY l.admission_number`,
+      [streamId]
+    );
+
+    const learners = learnersResult.rows;
+
+    // Generate Excel file
+    const { exportClassList } = require('../utils/excelExport');
+    const buffer = await exportClassList(learners, stream.class_name, stream.stream_name);
+
+    // Set response headers
+    res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
+    res.setHeader(
+      'Content-Disposition',
+      `attachment; filename="ClassList_${stream.class_name}_${stream.stream_name}_${new Date().toISOString().split('T')[0]}.xlsx"`
+    );
+
+    res.send(buffer);
+  } catch (error) {
+    console.error('Error downloading class list:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Failed to generate class list',
+      error: error.message,
+    });
+  }
+};
+
 module.exports = {
   getAllClasses,
   getClassById,
@@ -499,4 +567,5 @@ module.exports = {
   updateStream,
   deleteStream,
   getAvailableTeachers,
+  downloadStreamClassList,
 };

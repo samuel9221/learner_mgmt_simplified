@@ -11,7 +11,8 @@ const {
   getUserById,
   createUser,
   updateUser,
-  deleteUser
+  deleteUser,
+  downloadUsersExcel
 } = require('../controllers/userController');
 
 const {
@@ -25,6 +26,7 @@ router.use(authenticate);
 router.use(authorizeAdmin);
 
 router.get('/', getAllUsers);
+router.get('/download/excel', downloadUsersExcel);
 router.get('/:id', getUserById);
 router.post('/', createUser);
 router.put('/:id', updateUser);
