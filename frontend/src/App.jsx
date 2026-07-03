@@ -94,7 +94,11 @@ function App() {
 
         {/* ── Public routes ── */}
         <Route path="/login" element={
-          <PublicRoute><AuthLayout><LoginPage /></AuthLayout></PublicRoute>
+          <PublicRoute>
+            <AuthLayout>
+              <LoginPage />
+            </AuthLayout>
+          </PublicRoute>
         } />
         <Route path="/forgot-password" element={
           <PublicRoute><AuthLayout><ForgotPasswordPage /></AuthLayout></PublicRoute>
@@ -165,10 +169,10 @@ function App() {
 
           {/* ── Results ── */}
           <Route path="results/final" element={
-            <ProtectedRoute><FinalResults /></ProtectedRoute>
+            <ProtectedRoute requiredRole="admin"><FinalResults /></ProtectedRoute>
           } />
           <Route path="results/rankings" element={
-            <ProtectedRoute><Rankings /></ProtectedRoute>
+            <ProtectedRoute requiredRole="admin"><Rankings /></ProtectedRoute>
           } />
 
           {/* ── Analysis ── */}

@@ -5,6 +5,41 @@
 
 const { query, transaction } = require('../config/database');
 
+const validateS5S6CombinationSubjects = async (subjectIds) => {
+  if (!Array.isArray(subjectIds) || subjectIds.length !== 5 || new Set(subjectIds).size !== 5) {
+    return {
+      valid: false,
+      status: 400,
+      message: 'Combination must have exactly 5 different subjects (3 principals + 2 subsidiaries including GP)',
+    };
+  }
+
+  const result = await query(
+    `SELECT id, subject_code, subject_name, is_subsidiary
+     FROM subjects
+     WHERE id = ANY($1::uuid[])`,
+    [subjectIds]
+  );
+
+  if (result.rows.length !== subjectIds.length) {
+    return { valid: false, status: 404, message: 'One or more selected subjects were not found' };
+  }
+
+  const principalCount = result.rows.filter(s => !s.is_subsidiary).length;
+  const subsidiaryCount = result.rows.filter(s => s.is_subsidiary).length;
+  const hasGeneralPaper = result.rows.some(s => String(s.subject_code).toUpperCase() === 'GP');
+
+  if (principalCount !== 3 || subsidiaryCount !== 2 || !hasGeneralPaper) {
+    return {
+      valid: false,
+      status: 400,
+      message: 'Combination must contain exactly 3 principal subjects and 2 subsidiary subjects, including General Paper',
+    };
+  }
+
+  return { valid: true };
+};
+
 /**
  * @route   GET /api/subject-combinations
  * @desc    Get all subject combinations
@@ -41,7 +76,8 @@ const getAllCombinations = async (req, res) => {
           s.id,
           s.subject_code,
           s.subject_name,
-          s.description
+          s.description,
+        s.is_subsidiary
          FROM combination_subjects cs
          JOIN subjects s ON cs.subject_id = s.id
          WHERE cs.combination_id = $1
@@ -101,7 +137,8 @@ const getCombinationById = async (req, res) => {
         s.id,
         s.subject_code,
         s.subject_name,
-        s.description
+        s.description,
+        s.is_subsidiary
        FROM combination_subjects cs
        JOIN subjects s ON cs.subject_id = s.id
        WHERE cs.combination_id = $1
@@ -154,7 +191,7 @@ const createCombination = async (req, res) => {
     if (subject_ids.length !== 5) {
       return res.status(400).json({
         success: false,
-        message: 'Combination must have exactly 5 subjects (3 principals + 1 subsidiary + GP)',
+        message: 'Combination must have exactly 5 subjects (3 principals + 2 subsidiaries including GP)',
       });
     }
 
@@ -170,6 +207,14 @@ const createCombination = async (req, res) => {
         message: 'Combination code already exists',
       });
     }
+    const subjectValidation = await validateS5S6CombinationSubjects(subject_ids);
+    if (!subjectValidation.valid) {
+      return res.status(subjectValidation.status).json({
+        success: false,
+        message: subjectValidation.message,
+      });
+    }
+
 
     // Verify all subjects exist
     for (const subjectId of subject_ids) {
@@ -275,9 +320,17 @@ const updateCombination = async (req, res) => {
       if (subject_ids.length !== 5) {
         return res.status(400).json({
           success: false,
-          message: 'Combination must have exactly 5 subjects (3 principals + 1 subsidiary + GP)',
+          message: 'Combination must have exactly 5 subjects (3 principals + 2 subsidiaries including GP)',
         });
       }
+    const subjectValidation = await validateS5S6CombinationSubjects(subject_ids);
+    if (!subjectValidation.valid) {
+      return res.status(subjectValidation.status).json({
+        success: false,
+        message: subjectValidation.message,
+      });
+    }
+
 
       // Verify all subjects exist
       for (const subjectId of subject_ids) {

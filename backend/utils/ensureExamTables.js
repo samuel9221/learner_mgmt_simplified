@@ -65,17 +65,37 @@ const ensureExamTables = async () => {
       subject_id UUID NOT NULL REFERENCES subjects(id) ON DELETE CASCADE,
       stream_id UUID REFERENCES streams(id),
       exam_session_id UUID NOT NULL REFERENCES exam_sessions(id) ON DELETE CASCADE,
+      paper_number INTEGER,
       score NUMERIC(5,2),
       is_absent BOOLEAN DEFAULT FALSE,
       teacher_id UUID NOT NULL REFERENCES users(id),
       created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
       updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-      UNIQUE (learner_id, subject_id, exam_session_id),
       CONSTRAINT check_exam_score CHECK (
         (score IS NULL AND is_absent = TRUE) OR
         (score IS NOT NULL AND score >= 0 AND score <= 100)
       )
     );
+
+    ALTER TABLE exam_results ADD COLUMN IF NOT EXISTS paper_number INTEGER;
+
+    DO $$
+    BEGIN
+      IF EXISTS (
+        SELECT 1 FROM information_schema.table_constraints
+        WHERE table_name = 'exam_results' AND constraint_name = 'exam_results_learner_id_subject_id_exam_session_id_key'
+      ) THEN
+        ALTER TABLE exam_results DROP CONSTRAINT exam_results_learner_id_subject_id_exam_session_id_key;
+      END IF;
+
+      IF NOT EXISTS (
+        SELECT 1 FROM information_schema.table_constraints
+        WHERE table_name = 'exam_results' AND constraint_name = 'exam_results_unique_paper'
+      ) THEN
+        ALTER TABLE exam_results
+        ADD CONSTRAINT exam_results_unique_paper UNIQUE (learner_id, subject_id, exam_session_id, paper_number);
+      END IF;
+    END $$;
 
     CREATE TABLE IF NOT EXISTS final_results (
       id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),

@@ -381,7 +381,7 @@ const enrollLearner = async (req, res) => {
       academic_year_id,
       optional_subjects, // For S1-S4: array of 2 subject IDs
       combination_id,    // For S5-S6: combination ID
-      subsidiary_id,     // For S5-S6: chosen subsidiary ID (not GP)
+      subsidiary_id,     // Legacy field; S5-S6 subsidiaries are defined by the combination
     } = req.body;
 
     // Validation
@@ -451,8 +451,8 @@ const enrollLearner = async (req, res) => {
         // S1-S4: Assign 7 compulsory + 2 optional
         await assignSubjectsS1ToS4(client, id, academic_year_id, classLevel, optional_subjects, req.user.id);
       } else if (classLevel.match(/S[5-6]/)) {
-        // S5-S6: Assign combination subjects
-        await assignSubjectsS5ToS6(client, id, academic_year_id, combination_id, subsidiary_id, req.user.id);
+        // S5-S6: Assign 3 principals + 2 subsidiaries from the combination
+        await assignSubjectsS5ToS6(client, id, academic_year_id, combination_id, req.user.id);
       }
 
       return enrollment;
@@ -475,21 +475,23 @@ const enrollLearner = async (req, res) => {
 
 // Helper function: Assign subjects for S1-S4
 async function assignSubjectsS1ToS4(client, learnerId, academicYearId, classLevel, optionalSubjects, userId) {
-  // Get compulsory subjects for this level
   const compulsoryResult = await client.query(
-    `SELECT id FROM subjects 
-     WHERE is_compulsory = TRUE 
+    `SELECT id FROM subjects
+     WHERE is_compulsory = TRUE
+     AND is_subsidiary = FALSE
      AND $1 = ANY(applicable_levels)`,
     [classLevel]
   );
 
   const compulsorySubjects = compulsoryResult.rows;
-
-  if (compulsorySubjects.length === 0) {
-    throw new Error(`No compulsory subjects found for ${classLevel}`);
+  if (compulsorySubjects.length !== 7) {
+    throw new Error(`${classLevel} must have exactly 7 compulsory subjects so learners take 9 subjects in total`);
   }
 
-  // Assign compulsory subjects
+  if (!Array.isArray(optionalSubjects) || optionalSubjects.length !== 2 || new Set(optionalSubjects).size !== 2) {
+    throw new Error('Exactly 2 different optional subjects must be selected for S1-S4');
+  }
+
   for (const subject of compulsorySubjects) {
     await client.query(
       `INSERT INTO learner_subjects (learner_id, subject_id, academic_year_id, is_compulsory, assigned_by)
@@ -499,27 +501,20 @@ async function assignSubjectsS1ToS4(client, learnerId, academicYearId, classLeve
     );
   }
 
-  // Validate optional subjects
-  if (!optionalSubjects || optionalSubjects.length !== 2) {
-    throw new Error('Exactly 2 optional subjects must be selected for S1-S4');
-  }
-
-  // Verify optional subjects are valid
   for (const subjectId of optionalSubjects) {
     const subjectCheck = await client.query(
-      `SELECT id FROM subjects 
-       WHERE id = $1 
-       AND is_compulsory = FALSE 
-       AND is_subsidiary = FALSE 
+      `SELECT id FROM subjects
+       WHERE id = $1
+       AND is_compulsory = FALSE
+       AND is_subsidiary = FALSE
        AND $2 = ANY(applicable_levels)`,
       [subjectId, classLevel]
     );
 
     if (subjectCheck.rows.length === 0) {
-      throw new Error(`Invalid optional subject selected`);
+      throw new Error('Invalid optional subject selected');
     }
 
-    // Assign optional subject
     await client.query(
       `INSERT INTO learner_subjects (learner_id, subject_id, academic_year_id, is_compulsory, assigned_by)
        VALUES ($1, $2, $3, $4, $5)
@@ -530,48 +525,36 @@ async function assignSubjectsS1ToS4(client, learnerId, academicYearId, classLeve
 }
 
 // Helper function: Assign subjects for S5-S6
-async function assignSubjectsS5ToS6(client, learnerId, academicYearId, combinationId, subsidiaryId, userId) {
-  if (!combinationId || !subsidiaryId) {
-    throw new Error('Combination and subsidiary subject are required for S5-S6');
+async function assignSubjectsS5ToS6(client, learnerId, academicYearId, combinationId, userId) {
+  if (!combinationId) {
+    throw new Error('Combination is required for S5-S6');
   }
 
-  // Get combination subjects (3 principals + GP)
   const combinationResult = await client.query(
-    `SELECT subject_id FROM combination_subjects WHERE combination_id = $1`,
+    `SELECT s.id AS subject_id, s.subject_code, s.subject_name, s.is_subsidiary
+     FROM combination_subjects cs
+     JOIN subjects s ON cs.subject_id = s.id
+     WHERE cs.combination_id = $1`,
     [combinationId]
   );
 
-  if (combinationResult.rows.length === 0) {
-    throw new Error('Invalid combination selected');
+  const subjects = combinationResult.rows;
+  const principalCount = subjects.filter(s => !s.is_subsidiary).length;
+  const subsidiaryCount = subjects.filter(s => s.is_subsidiary).length;
+  const hasGeneralPaper = subjects.some(s => String(s.subject_code).toUpperCase() === 'GP');
+
+  if (subjects.length !== 5 || principalCount !== 3 || subsidiaryCount !== 2 || !hasGeneralPaper) {
+    throw new Error('S5-S6 combinations must contain exactly 3 principal subjects and 2 subsidiary subjects, including General Paper');
   }
 
-  // Assign all combination subjects (principals + GP)
-  for (const row of combinationResult.rows) {
+  for (const subject of subjects) {
     await client.query(
       `INSERT INTO learner_subjects (learner_id, subject_id, academic_year_id, combination_id, is_compulsory, assigned_by)
        VALUES ($1, $2, $3, $4, $5, $6)
        ON CONFLICT (learner_id, subject_id, academic_year_id) DO NOTHING`,
-      [learnerId, row.subject_id, academicYearId, combinationId, true, userId]
+      [learnerId, subject.subject_id, academicYearId, combinationId, true, userId]
     );
   }
-
-  // Verify chosen subsidiary is valid (should not be GP)
-  const subsidiaryCheck = await client.query(
-    `SELECT id FROM subjects WHERE id = $1 AND is_subsidiary = TRUE AND subject_code != 'GP'`,
-    [subsidiaryId]
-  );
-
-  if (subsidiaryCheck.rows.length === 0) {
-    throw new Error('Invalid subsidiary subject selected');
-  }
-
-  // Assign the chosen subsidiary
-  await client.query(
-    `INSERT INTO learner_subjects (learner_id, subject_id, academic_year_id, combination_id, is_compulsory, assigned_by)
-     VALUES ($1, $2, $3, $4, $5, $6)
-     ON CONFLICT (learner_id, subject_id, academic_year_id) DO NOTHING`,
-    [learnerId, subsidiaryId, academicYearId, combinationId, false, userId]
-  );
 }
 
 /**

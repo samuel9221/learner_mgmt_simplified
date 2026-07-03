@@ -1,4 +1,4 @@
-const pool = require('../config/database');
+const { pool } = require('../config/database');
 const { getAllGradingScales } = require('../utils/grading.service');
 
 // GET /api/analysis/stream/:streamId/term/:termId
@@ -249,21 +249,56 @@ const getStreamRankings = async (req, res) => {
     const { streamId, termId } = req.params;
 
     const rankings = await pool.query(
-      `SELECT l.admission_number,
-              l.first_name || ' ' || l.last_name AS learner_name,
-              l.gender,
-              ROUND(AVG(fr.final_score), 2) AS overall_average,
-              MIN(fr.stream_rank) AS stream_rank,
-              COUNT(fr.id) AS subjects_taken,
-              COUNT(CASE WHEN fr.grade = 'A' THEN 1 END) AS grade_a_count,
-              COUNT(CASE WHEN fr.grade = 'B' THEN 1 END) AS grade_b_count,
-              COUNT(CASE WHEN fr.grade = 'C' THEN 1 END) AS grade_c_count,
-              COUNT(CASE WHEN fr.grade = 'D' THEN 1 END) AS grade_d_count
-       FROM final_results fr
-       JOIN learners l ON fr.learner_id = l.id
-       WHERE fr.stream_id = $1 AND fr.term_id = $2
-       GROUP BY l.id, l.admission_number, l.first_name, l.last_name, l.gender
-       ORDER BY stream_rank ASC NULLS LAST`,
+      `WITH summaries AS (
+         SELECT l.id AS learner_id,
+                l.admission_number,
+                l.first_name || ' ' || l.last_name AS learner_name,
+                l.gender,
+                c.class_name,
+                CASE
+                  WHEN c.class_name IN ('S1', 'S2', 'S3', 'S4') THEN 9
+                  WHEN c.class_name IN ('S5', 'S6') THEN 5
+                  ELSE COUNT(DISTINCT fr.subject_id)
+                END AS required_subjects,
+                COUNT(DISTINCT fr.subject_id) FILTER (WHERE fr.final_score IS NOT NULL) AS subjects_taken,
+                COUNT(DISTINCT CASE WHEN s.is_subsidiary = FALSE THEN fr.subject_id END) FILTER (WHERE fr.final_score IS NOT NULL) AS principal_subjects,
+                COUNT(DISTINCT CASE WHEN s.is_subsidiary = TRUE THEN fr.subject_id END) FILTER (WHERE fr.final_score IS NOT NULL) AS subsidiary_subjects,
+                COUNT(DISTINCT CASE WHEN LOWER(COALESCE(s.subject_code, '')) = 'gp' OR LOWER(COALESCE(s.subject_name, '')) LIKE '%general paper%' THEN fr.subject_id END) FILTER (WHERE fr.final_score IS NOT NULL) AS general_paper_subjects,
+                ROUND(AVG(fr.final_score) FILTER (WHERE fr.final_score IS NOT NULL), 2) AS overall_average,
+                ROUND(SUM(fr.final_score) FILTER (WHERE fr.final_score IS NOT NULL), 2) AS total_mark,
+                MAX(CASE WHEN LOWER(COALESCE(s.subject_code, '')) IN ('math', 'mtc', 'mathematics') OR LOWER(COALESCE(s.subject_name, '')) LIKE '%mathematics%' OR LOWER(COALESCE(s.subject_name, '')) LIKE '%mtc%' THEN fr.final_score END) AS math_score,
+                MAX(CASE WHEN LOWER(COALESCE(s.subject_code, '')) IN ('eng', 'english') OR LOWER(COALESCE(s.subject_name, '')) LIKE '%english%' THEN fr.final_score END) AS english_score,
+                COUNT(CASE WHEN fr.grade = 'A' THEN 1 END) AS grade_a_count,
+                COUNT(CASE WHEN fr.grade = 'B' THEN 1 END) AS grade_b_count,
+                COUNT(CASE WHEN fr.grade = 'C' THEN 1 END) AS grade_c_count,
+                COUNT(CASE WHEN fr.grade = 'D' THEN 1 END) AS grade_d_count
+         FROM final_results fr
+         JOIN learners l ON fr.learner_id = l.id
+         JOIN streams st ON fr.stream_id = st.id
+         JOIN classes c ON st.class_id = c.id
+         LEFT JOIN subjects s ON fr.subject_id = s.id
+         WHERE fr.stream_id = $1 AND fr.term_id = $2
+         GROUP BY l.id, l.admission_number, l.first_name, l.last_name, l.gender, c.class_name
+       ),
+       ranked AS (
+         SELECT learner_id,
+                RANK() OVER (ORDER BY overall_average DESC, total_mark DESC, math_score DESC, english_score DESC) AS stream_rank
+         FROM summaries
+         WHERE subjects_taken = required_subjects
+           AND overall_average IS NOT NULL
+           AND (
+             class_name NOT IN ('S5', 'S6')
+             OR (
+               principal_subjects = 3
+               AND subsidiary_subjects = 2
+               AND general_paper_subjects >= 1
+             )
+           )
+       )
+       SELECT s.*, r.stream_rank
+       FROM summaries s
+       LEFT JOIN ranked r ON r.learner_id = s.learner_id
+       ORDER BY r.stream_rank ASC NULLS LAST, s.overall_average DESC NULLS LAST, s.total_mark DESC NULLS LAST, s.learner_name`,
       [streamId, termId]
     );
 
@@ -280,23 +315,57 @@ const getClassRankings = async (req, res) => {
     const { classId, termId } = req.params;
 
     const rankings = await pool.query(
-      `SELECT l.admission_number,
-              l.first_name || ' ' || l.last_name AS learner_name,
-              l.gender,
-              st.stream_name,
-              ROUND(AVG(fr.final_score), 2) AS overall_average,
-              MIN(fr.class_rank) AS class_rank,
-              COUNT(fr.id) AS subjects_taken,
-              COUNT(CASE WHEN fr.grade = 'A' THEN 1 END) AS grade_a_count,
-              COUNT(CASE WHEN fr.grade = 'B' THEN 1 END) AS grade_b_count,
-              COUNT(CASE WHEN fr.grade = 'C' THEN 1 END) AS grade_c_count,
-              COUNT(CASE WHEN fr.grade = 'D' THEN 1 END) AS grade_d_count
-       FROM final_results fr
-       JOIN learners l ON fr.learner_id = l.id
-       JOIN streams st ON fr.stream_id = st.id
-       WHERE st.class_id = $1 AND fr.term_id = $2
-       GROUP BY l.id, l.admission_number, l.first_name, l.last_name, l.gender, st.stream_name
-       ORDER BY class_rank ASC NULLS LAST`,
+      `WITH summaries AS (
+         SELECT l.id AS learner_id,
+                l.admission_number,
+                l.first_name || ' ' || l.last_name AS learner_name,
+                l.gender,
+                st.stream_name,
+                c.class_name,
+                CASE
+                  WHEN c.class_name IN ('S1', 'S2', 'S3', 'S4') THEN 9
+                  WHEN c.class_name IN ('S5', 'S6') THEN 5
+                  ELSE COUNT(DISTINCT fr.subject_id)
+                END AS required_subjects,
+                COUNT(DISTINCT fr.subject_id) FILTER (WHERE fr.final_score IS NOT NULL) AS subjects_taken,
+                COUNT(DISTINCT CASE WHEN s.is_subsidiary = FALSE THEN fr.subject_id END) FILTER (WHERE fr.final_score IS NOT NULL) AS principal_subjects,
+                COUNT(DISTINCT CASE WHEN s.is_subsidiary = TRUE THEN fr.subject_id END) FILTER (WHERE fr.final_score IS NOT NULL) AS subsidiary_subjects,
+                COUNT(DISTINCT CASE WHEN LOWER(COALESCE(s.subject_code, '')) = 'gp' OR LOWER(COALESCE(s.subject_name, '')) LIKE '%general paper%' THEN fr.subject_id END) FILTER (WHERE fr.final_score IS NOT NULL) AS general_paper_subjects,
+                ROUND(AVG(fr.final_score) FILTER (WHERE fr.final_score IS NOT NULL), 2) AS overall_average,
+                ROUND(SUM(fr.final_score) FILTER (WHERE fr.final_score IS NOT NULL), 2) AS total_mark,
+                MAX(CASE WHEN LOWER(COALESCE(s.subject_code, '')) IN ('math', 'mtc', 'mathematics') OR LOWER(COALESCE(s.subject_name, '')) LIKE '%mathematics%' OR LOWER(COALESCE(s.subject_name, '')) LIKE '%mtc%' THEN fr.final_score END) AS math_score,
+                MAX(CASE WHEN LOWER(COALESCE(s.subject_code, '')) IN ('eng', 'english') OR LOWER(COALESCE(s.subject_name, '')) LIKE '%english%' THEN fr.final_score END) AS english_score,
+                COUNT(CASE WHEN fr.grade = 'A' THEN 1 END) AS grade_a_count,
+                COUNT(CASE WHEN fr.grade = 'B' THEN 1 END) AS grade_b_count,
+                COUNT(CASE WHEN fr.grade = 'C' THEN 1 END) AS grade_c_count,
+                COUNT(CASE WHEN fr.grade = 'D' THEN 1 END) AS grade_d_count
+         FROM final_results fr
+         JOIN learners l ON fr.learner_id = l.id
+         JOIN streams st ON fr.stream_id = st.id
+         JOIN classes c ON st.class_id = c.id
+         LEFT JOIN subjects s ON fr.subject_id = s.id
+         WHERE st.class_id = $1 AND fr.term_id = $2
+         GROUP BY l.id, l.admission_number, l.first_name, l.last_name, l.gender, st.stream_name, c.class_name
+       ),
+       ranked AS (
+         SELECT learner_id,
+                RANK() OVER (ORDER BY overall_average DESC, total_mark DESC, math_score DESC, english_score DESC) AS class_rank
+         FROM summaries
+         WHERE subjects_taken = required_subjects
+           AND overall_average IS NOT NULL
+           AND (
+             class_name NOT IN ('S5', 'S6')
+             OR (
+               principal_subjects = 3
+               AND subsidiary_subjects = 2
+               AND general_paper_subjects >= 1
+             )
+           )
+       )
+       SELECT s.*, r.class_rank
+       FROM summaries s
+       LEFT JOIN ranked r ON r.learner_id = s.learner_id
+       ORDER BY r.class_rank ASC NULLS LAST, s.overall_average DESC NULLS LAST, s.total_mark DESC NULLS LAST, s.learner_name`,
       [classId, termId]
     );
 

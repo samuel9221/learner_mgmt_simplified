@@ -257,53 +257,87 @@ const update = async (req, res) => {
   }
 };
 
-// ─── Private: compute stream + class rankings ─────────────────────────────────
+// Private: compute stream + class rankings from complete subject loads.
 const _computeRankings = async (client, termId) => {
-  // Stream ranking: rank by avg final_score per learner within each stream
-  await client.query(`
-    WITH stream_averages AS (
-      SELECT learner_id, stream_id,
-             AVG(final_score) AS avg_score
-      FROM final_results
-      WHERE term_id = $1 AND final_score IS NOT NULL
-      GROUP BY learner_id, stream_id
-    ),
-    ranked AS (
-      SELECT learner_id, stream_id,
-             RANK() OVER (PARTITION BY stream_id ORDER BY avg_score DESC) AS stream_rank
-      FROM stream_averages
-    )
-    UPDATE final_results fr
-    SET stream_rank = r.stream_rank
-    FROM ranked r
-    WHERE fr.learner_id = r.learner_id
-      AND fr.stream_id  = r.stream_id
-      AND fr.term_id    = $1
-  `, [termId]);
+  await client.query(
+    'UPDATE final_results SET stream_rank = NULL, class_rank = NULL WHERE term_id = $1',
+    [termId]
+  );
 
-  // Class ranking: rank by avg final_score per learner within each class
+  // S1-S4 learners rank only after 9 graded subjects; S5-S6 rank after 5 with 3 principals, 2 subsidiaries, and General Paper included.
   await client.query(`
-    WITH class_averages AS (
-      SELECT fr.learner_id, c.id AS class_id,
-             AVG(fr.final_score) AS avg_score
+    WITH learner_averages AS (
+      SELECT
+        fr.learner_id,
+        fr.stream_id,
+        st.class_id,
+        c.class_name,
+        CASE
+          WHEN c.class_name IN ('S1', 'S2', 'S3', 'S4') THEN 9
+          WHEN c.class_name IN ('S5', 'S6') THEN 5
+          ELSE COUNT(DISTINCT fr.subject_id)
+        END AS required_subjects,
+        COUNT(DISTINCT fr.subject_id) FILTER (WHERE fr.final_score IS NOT NULL) AS graded_subjects,
+        COUNT(DISTINCT CASE WHEN s.is_subsidiary = FALSE THEN fr.subject_id END) FILTER (WHERE fr.final_score IS NOT NULL) AS principal_subjects,
+        COUNT(DISTINCT CASE WHEN s.is_subsidiary = TRUE THEN fr.subject_id END) FILTER (WHERE fr.final_score IS NOT NULL) AS subsidiary_subjects,
+        COUNT(DISTINCT CASE WHEN LOWER(COALESCE(s.subject_code, '')) = 'gp' OR LOWER(COALESCE(s.subject_name, '')) LIKE '%general paper%' THEN fr.subject_id END) FILTER (WHERE fr.final_score IS NOT NULL) AS general_paper_subjects,
+        MAX(CASE WHEN LOWER(COALESCE(s.subject_code, '')) IN ('math', 'mtc', 'mathematics') OR LOWER(COALESCE(s.subject_name, '')) LIKE '%mathematics%' OR LOWER(COALESCE(s.subject_name, '')) LIKE '%mtc%' THEN fr.final_score END) AS math_score,
+        MAX(CASE WHEN LOWER(COALESCE(s.subject_code, '')) IN ('eng', 'english') OR LOWER(COALESCE(s.subject_name, '')) LIKE '%english%' THEN fr.final_score END) AS english_score,
+        ROUND(AVG(fr.final_score) FILTER (WHERE fr.final_score IS NOT NULL), 2) AS avg_score,
+        ROUND(SUM(fr.final_score) FILTER (WHERE fr.final_score IS NOT NULL), 2) AS total_mark
       FROM final_results fr
       JOIN streams st ON fr.stream_id = st.id
       JOIN classes c ON st.class_id = c.id
-      WHERE fr.term_id = $1 AND fr.final_score IS NOT NULL
-      GROUP BY fr.learner_id, c.id
+      LEFT JOIN subjects s ON fr.subject_id = s.id
+      WHERE fr.term_id = $1
+      GROUP BY fr.learner_id, fr.stream_id, st.class_id, c.class_name
     ),
-    ranked AS (
-      SELECT learner_id, class_id,
-             RANK() OVER (PARTITION BY class_id ORDER BY avg_score DESC) AS class_rank
-      FROM class_averages
+    eligible AS (
+      SELECT *
+      FROM learner_averages
+      WHERE graded_subjects = required_subjects
+        AND avg_score IS NOT NULL
+        AND (
+          class_name NOT IN ('S5', 'S6')
+          OR (
+            principal_subjects = 3
+            AND subsidiary_subjects = 2
+            AND general_paper_subjects >= 1
+          )
+        )
+    ),
+    stream_ranked AS (
+      SELECT
+        learner_id,
+        stream_id,
+        RANK() OVER (
+          PARTITION BY stream_id
+          ORDER BY avg_score DESC, total_mark DESC, math_score DESC, english_score DESC
+        ) AS stream_rank
+      FROM eligible
+    ),
+    class_ranked AS (
+      SELECT
+        learner_id,
+        class_id,
+        RANK() OVER (
+          PARTITION BY class_id
+          ORDER BY avg_score DESC, total_mark DESC, math_score DESC, english_score DESC
+        ) AS class_rank
+      FROM eligible
     )
     UPDATE final_results fr
-    SET class_rank = r.class_rank
-    FROM ranked r
-    JOIN streams st ON fr.stream_id = st.id
-    WHERE fr.learner_id = r.learner_id
-      AND st.class_id   = r.class_id
-      AND fr.term_id    = $1
+    SET
+      stream_rank = sr.stream_rank,
+      class_rank = cr.class_rank
+    FROM stream_ranked sr
+    JOIN streams st ON st.id = sr.stream_id
+    JOIN class_ranked cr
+      ON cr.learner_id = sr.learner_id
+     AND cr.class_id = st.class_id
+    WHERE fr.learner_id = sr.learner_id
+      AND fr.stream_id = sr.stream_id
+      AND fr.term_id = $1
   `, [termId]);
 };
 

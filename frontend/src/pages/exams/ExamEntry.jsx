@@ -25,6 +25,7 @@ export default function ExamEntry() {
   const [sessions, setSessions] = useState([]);
   const [streams, setStreams] = useState([]);
   const [subjects, setSubjects] = useState([]);
+  const [subjectPapers, setSubjectPapers] = useState([]);
 
   const [selectedYear, setSelectedYear] = useState("");
   const [selectedTerm, setSelectedTerm] = useState("");
@@ -40,6 +41,8 @@ export default function ExamEntry() {
   const [error, setError] = useState("");
   const [success, setSuccess] = useState("");
   const [dirty, setDirty] = useState(false);
+
+  const selectedStreamInfo = streams.find(s => String(s.id) === String(selectedStream));
 
   // ── Load academic years on mount ──────────────────────────
   useEffect(() => {
@@ -79,11 +82,30 @@ export default function ExamEntry() {
   // ── Load subjects when stream changes ─────────────────────
   useEffect(() => {
     if (!selectedStream) return;
-    setSelectedSubject(""); setLearners([]);
+    setSelectedSubject(""); setLearners([]); setSubjectPapers([]);
     get(`/subjects?stream_id=${selectedStream}&academic_year_id=${selectedYear}`).then(d => {
       if (d.success) setSubjects(d.data);
     });
   }, [selectedStream]);
+
+  // ── Load subject papers when a subject is picked ─────────
+  useEffect(() => {
+    if (!selectedSubject) {
+      setSubjectPapers([]);
+      return;
+    }
+
+    let isMounted = true;
+    get(`/subjects/${selectedSubject}/papers`).then(d => {
+      if (isMounted && d.success) {
+        setSubjectPapers(d.data || []);
+      }
+    }).catch(() => {
+      if (isMounted) setSubjectPapers([]);
+    });
+
+    return () => { isMounted = false; };
+  }, [selectedSubject]);
 
   // ── Load learners + existing results when subject chosen ──
   const loadLearnerScores = useCallback(async () => {
@@ -105,25 +127,57 @@ export default function ExamEntry() {
 
       if (!learnersRes.success) throw new Error(learnersRes.message);
 
-      // Map existing results keyed by learner_id + subject_id
       const existing = {};
       if (resultsRes.success) {
         resultsRes.data
-          .filter(r => r.subject_id === selectedSubject)
-          .forEach(r => { existing[r.learner_id] = r; });
+          .filter(r => String(r.subject_id) === String(selectedSubject))
+          .forEach(r => {
+            if (!existing[r.learner_id]) existing[r.learner_id] = [];
+            existing[r.learner_id].push(r);
+          });
       }
       setExistingResults(existing);
 
-      // Build table rows
-      const rows = learnersRes.data.map(l => ({
-        id: l.id,
-        admission_number: l.admission_number,
-        name: `${l.first_name} ${l.last_name}`,
-        gender: l.gender,
-        score: existing[l.id]?.score ?? "",
-        is_absent: existing[l.id]?.is_absent ?? false,
-        saved: !!existing[l.id],
-      }));
+      const streamInfo = streams.find(s => String(s.id) === String(selectedStream));
+      const isPaperEntrySubject = subjectPapers.length > 0 && ["S5", "S6"].includes(streamInfo?.class_name);
+
+      const rows = learnersRes.data.map(l => {
+        const savedEntries = existing[l.id] || [];
+        if (isPaperEntrySubject) {
+          const paperEntries = subjectPapers.map(paper => {
+            const normalizedPaperNumber = Number(paper.paper_number);
+            const matched = savedEntries.find(r => Number(r.paper_number) === normalizedPaperNumber);
+            return {
+              paper_number: normalizedPaperNumber,
+              paper_name: paper.paper_name || `Paper ${normalizedPaperNumber}`,
+              score: matched?.score ?? "",
+              is_absent: matched?.is_absent ?? false,
+              saved: !!matched,
+            };
+          });
+
+          return {
+            id: l.id,
+            admission_number: l.admission_number,
+            name: `${l.first_name} ${l.last_name}`,
+            gender: l.gender,
+            paperEntries,
+            is_absent: paperEntries.some(entry => entry.is_absent) || false,
+            saved: paperEntries.every(entry => entry.saved),
+          };
+        }
+
+        const firstEntry = savedEntries[0];
+        return {
+          id: l.id,
+          admission_number: l.admission_number,
+          name: `${l.first_name} ${l.last_name}`,
+          gender: l.gender,
+          score: firstEntry?.score ?? "",
+          is_absent: firstEntry?.is_absent ?? false,
+          saved: !!firstEntry,
+        };
+      });
       setLearners(rows);
       setDirty(false);
     } catch (e) {
@@ -131,36 +185,75 @@ export default function ExamEntry() {
     } finally {
       setLoading(false);
     }
-  }, [selectedStream, selectedSession, selectedSubject, selectedYear, subjects]);
+  }, [selectedStream, selectedSession, selectedSubject, selectedYear, subjects, subjectPapers, streams]);
 
   useEffect(() => { loadLearnerScores(); }, [loadLearnerScores]);
 
   // ── Score change ──────────────────────────────────────────
-  const handleScoreChange = (idx, value) => {
+  const handleScoreChange = (idx, value, paperNumber = null) => {
     const updated = [...learners];
     const numeric = value === "" ? "" : Math.min(100, Math.max(0, Number(value)));
-    updated[idx] = { ...updated[idx], score: numeric, saved: false };
+
+    if (paperNumber !== null) {
+      const existingEntries = Array.isArray(updated[idx]?.paperEntries) ? updated[idx].paperEntries : [];
+      const paperEntries = existingEntries.map(entry =>
+        Number(entry.paper_number) === Number(paperNumber)
+          ? { ...entry, score: numeric, saved: false }
+          : entry
+      );
+      updated[idx] = { ...updated[idx], paperEntries, saved: false };
+    } else {
+      updated[idx] = { ...updated[idx], score: numeric, saved: false };
+    }
+
     setLearners(updated);
     setDirty(true);
   };
 
   const handleAbsentToggle = (idx) => {
     const updated = [...learners];
-    updated[idx] = {
-      ...updated[idx],
-      is_absent: !updated[idx].is_absent,
-      score: !updated[idx].is_absent ? "" : updated[idx].score,
-      saved: false,
-    };
+    const nextAbsent = !updated[idx].is_absent;
+
+    if (subjectPapers.length > 0 && ["S5", "S6"].includes(selectedStreamInfo?.class_name)) {
+      const existingEntries = Array.isArray(updated[idx]?.paperEntries) ? updated[idx].paperEntries : [];
+      updated[idx] = {
+        ...updated[idx],
+        is_absent: nextAbsent,
+        paperEntries: existingEntries.map(entry => ({
+          ...entry,
+          score: nextAbsent ? "" : entry.score,
+          is_absent: nextAbsent,
+          saved: false,
+        })),
+        saved: false,
+      };
+    } else {
+      updated[idx] = {
+        ...updated[idx],
+        is_absent: nextAbsent,
+        score: nextAbsent ? "" : updated[idx].score,
+        saved: false,
+      };
+    }
+
     setLearners(updated);
     setDirty(true);
   };
 
   // ── Fill all empty with a value (quick fill) ──────────────
   const fillAll = (value) => {
-    const updated = learners.map(l =>
-      l.is_absent ? l : { ...l, score: value, saved: false }
-    );
+    const updated = learners.map(l => {
+      if (l.is_absent) return l;
+      if (subjectPapers.length > 0 && ["S5", "S6"].includes(selectedStreamInfo?.class_name)) {
+        const existingEntries = Array.isArray(l.paperEntries) ? l.paperEntries : [];
+        return {
+          ...l,
+          paperEntries: existingEntries.map(entry => ({ ...entry, score: value, saved: false })),
+          saved: false,
+        };
+      }
+      return { ...l, score: value, saved: false };
+    });
     setLearners(updated);
     setDirty(true);
   };
@@ -170,21 +263,41 @@ export default function ExamEntry() {
     setError("");
     setSuccess("");
 
-    // Validate: non-absent learners must have a score
-    const invalid = learners.filter(l => !l.is_absent && l.score === "");
+    const isPaperEntrySubject = subjectPapers.length > 0 && ["S5", "S6"].includes(selectedStreamInfo?.class_name);
+    const invalid = learners.filter(l => {
+      if (l.is_absent) return false;
+      if (isPaperEntrySubject) {
+        const entries = Array.isArray(l.paperEntries) ? l.paperEntries : [];
+        return entries.some(entry => entry.score === "");
+      }
+      return l.score === "";
+    });
+
     if (invalid.length > 0) {
-      setError(`${invalid.length} learner(s) have no score entered. Enter a score or mark as absent.`);
+      setError(`${invalid.length} learner(s) have incomplete score entry. Enter a score for every paper or mark the learner as absent.`);
       return;
     }
 
     setSaving(true);
     try {
-      const results = learners.map(l => ({
-        learner_id: l.id,
-        subject_id: selectedSubject,
-        score: l.is_absent ? null : Number(l.score),
-        is_absent: l.is_absent,
-      }));
+      const results = learners.flatMap(l => {
+        if (isPaperEntrySubject) {
+          return l.paperEntries.map(entry => ({
+            learner_id: l.id,
+            subject_id: selectedSubject,
+            score: l.is_absent || entry.is_absent ? null : Number(entry.score),
+            is_absent: l.is_absent || entry.is_absent,
+            paper_number: entry.paper_number,
+          }));
+        }
+
+        return [{
+          learner_id: l.id,
+          subject_id: selectedSubject,
+          score: l.is_absent ? null : Number(l.score),
+          is_absent: l.is_absent,
+        }];
+      });
 
       const { data } = await api.post("/exam-results/bulk", {
           exam_session_id: selectedSession,
@@ -193,7 +306,13 @@ export default function ExamEntry() {
       });
       if (data.success) {
         setSuccess(`${data.message} — final scores auto-computed`);
-        setLearners(prev => prev.map(l => ({ ...l, saved: true })));
+        setLearners(prev => prev.map(l => ({
+          ...l,
+          saved: true,
+          ...(subjectPapers.length > 0 && ["S5", "S6"].includes(selectedStreamInfo?.class_name)
+            ? { paperEntries: (Array.isArray(l.paperEntries) ? l.paperEntries : []).map(entry => ({ ...entry, saved: true })) }
+            : {}),
+        })));
         setDirty(false);
         setTimeout(() => setSuccess(""), 4000);
       } else {
@@ -207,22 +326,34 @@ export default function ExamEntry() {
   };
 
   // ── Derived stats ─────────────────────────────────────────
-  const enteredScores = learners.filter(l => !l.is_absent && l.score !== "").map(l => Number(l.score));
-  const avg = enteredScores.length
-    ? (enteredScores.reduce((a, b) => a + b, 0) / enteredScores.length).toFixed(1)
-    : "—";
-  const highest = enteredScores.length ? Math.max(...enteredScores) : "—";
-  const lowest = enteredScores.length ? Math.min(...enteredScores) : "—";
+  const isPaperEntrySubject = subjectPapers.length > 0 && ["S5", "S6"].includes(selectedStreamInfo?.class_name);
+  const subjectScores = learners
+    .filter(l => !l.is_absent)
+    .map(l => {
+      if (isPaperEntrySubject) {
+        const entries = Array.isArray(l.paperEntries) ? l.paperEntries : [];
+        const values = entries.filter(entry => entry.score !== "").map(entry => Number(entry.score));
+        return values.length ? values.reduce((a, b) => a + b, 0) / values.length : null;
+      }
+      return l.score === "" ? null : Number(l.score);
+    })
+    .filter(v => v !== null);
+  const avg = subjectScores.length ? (subjectScores.reduce((a, b) => a + b, 0) / subjectScores.length).toFixed(1) : "—";
+  const highest = subjectScores.length ? Math.max(...subjectScores) : "—";
+  const lowest = subjectScores.length ? Math.min(...subjectScores) : "—";
   const absentCount = learners.filter(l => l.is_absent).length;
-  const enteredCount = learners.filter(l => !l.is_absent && l.score !== "").length;
+  const enteredCount = subjectScores.length;
 
   const sessionInfo = sessions.find(s => s.id === selectedSession);
   const subjectInfo = subjects.find(s => String(s.id) === String(selectedSubject));
   const isOptionalSubject = subjectInfo && !subjectInfo.is_compulsory;
   const isReady = selectedSession && selectedStream && selectedSubject;
+  const paperColumns = subjectPapers.map(paper => ({
+    paper_number: Number(paper.paper_number),
+    paper_name: paper.paper_name || `Paper ${paper.paper_number}`,
+  }));
   const selectedYearInfo = academicYears.find(y => String(y.id) === String(selectedYear));
   const selectedTermInfo = terms.find(t => String(t.id) === String(selectedTerm));
-  const selectedStreamInfo = streams.find(s => String(s.id) === String(selectedStream));
 
   const exportMarksExcel = () => {
     if (!learners.length) return;
@@ -397,6 +528,15 @@ export default function ExamEntry() {
               {isOptionalSubject ? "Optional subject - assigned learners only" : "Compulsory subject - full stream"}
             </span>
           )}
+          {isPaperEntrySubject && (
+            <span style={{
+              ...styles.examTypeBadge,
+              background: "#fdf2f8",
+              color: "#be185d",
+            }}>
+              Paper-based entry ({paperColumns.length} papers)
+            </span>
+          )}
         </div>
       )}
 
@@ -501,7 +641,11 @@ export default function ExamEntry() {
                   <th style={styles.th}>Adm No</th>
                   <th style={styles.th}>Learner Name</th>
                   <th style={{ ...styles.th, textAlign: "center" }}>Gender</th>
-                  <th style={{ ...styles.th, textAlign: "center" }}>Score (out of 100)</th>
+                  {isPaperEntrySubject ? paperColumns.map(paper => (
+                    <th key={paper.paper_number} style={{ ...styles.th, textAlign: "center" }}>{paper.paper_name}</th>
+                  )) : (
+                    <th style={{ ...styles.th, textAlign: "center" }}>Score (out of 100)</th>
+                  )}
                   <th style={{ ...styles.th, textAlign: "center" }}>Weighted</th>
                   <th style={{ ...styles.th, textAlign: "center" }}>Absent</th>
                   <th style={{ ...styles.th, textAlign: "center" }}>Status</th>
@@ -510,8 +654,14 @@ export default function ExamEntry() {
               <tbody>
                 {learners.map((l, idx) => {
                   const weight = sessionInfo?.exam_type === "mid_term" ? 0.4 : 0.6;
-                  const weighted = l.score !== "" && !l.is_absent
-                    ? (Number(l.score) * weight).toFixed(1)
+                  const subjectScoreValues = isPaperEntrySubject
+                    ? l.paperEntries.filter(entry => entry.score !== "").map(entry => Number(entry.score))
+                    : (l.score !== "" ? [Number(l.score)] : []);
+                  const subjectAverage = subjectScoreValues.length
+                    ? (subjectScoreValues.reduce((a, b) => a + b, 0) / subjectScoreValues.length).toFixed(1)
+                    : "";
+                  const weighted = subjectAverage !== "" && !l.is_absent
+                    ? (Number(subjectAverage) * weight).toFixed(1)
                     : "—";
                   const rowBg = l.is_absent
                     ? "#fef2f2"
@@ -533,31 +683,62 @@ export default function ExamEntry() {
                           {l.gender === "Male" ? "M" : "F"}
                         </span>
                       </td>
-                      <td style={{ ...styles.td, textAlign: "center" }}>
-                        {l.is_absent ? (
-                          <span style={styles.absentText}>Absent</span>
-                        ) : (
-                          <div style={styles.scoreInputWrap}>
-                            <input
-                              type="number"
-                              min={0}
-                              max={100}
-                              step={0.5}
-                              value={l.score}
-                              onChange={e => handleScoreChange(idx, e.target.value)}
-                              style={{
-                                ...styles.scoreInput,
-                                borderColor: l.score === "" ? "#fca5a5"
-                                  : l.score >= 80 ? "#86efac"
-                                  : l.score >= 50 ? "#fde68a"
-                                  : "#fca5a5",
-                              }}
-                              placeholder="0–100"
-                            />
-                            <span style={styles.pctLabel}>%</span>
-                          </div>
-                        )}
-                      </td>
+                      {isPaperEntrySubject ? paperColumns.map(paper => {
+                        const entry = l.paperEntries.find(item => Number(item.paper_number) === Number(paper.paper_number));
+                        return (
+                          <td key={paper.paper_number} style={{ ...styles.td, textAlign: "center" }}>
+                            {l.is_absent ? (
+                              <span style={styles.absentText}>Absent</span>
+                            ) : (
+                              <div style={styles.scoreInputWrap}>
+                                <input
+                                  type="number"
+                                  min={0}
+                                  max={100}
+                                  step={0.5}
+                                  value={entry?.score ?? ""}
+                                  onChange={e => handleScoreChange(idx, e.target.value, paper.paper_number)}
+                                  style={{
+                                    ...styles.scoreInput,
+                                    borderColor: entry?.score === "" ? "#fca5a5"
+                                      : Number(entry.score) >= 80 ? "#86efac"
+                                      : Number(entry.score) >= 50 ? "#fde68a"
+                                      : "#fca5a5",
+                                  }}
+                                  placeholder="0–100"
+                                />
+                                <span style={styles.pctLabel}>%</span>
+                              </div>
+                            )}
+                          </td>
+                        );
+                      }) : (
+                        <td style={{ ...styles.td, textAlign: "center" }}>
+                          {l.is_absent ? (
+                            <span style={styles.absentText}>Absent</span>
+                          ) : (
+                            <div style={styles.scoreInputWrap}>
+                              <input
+                                type="number"
+                                min={0}
+                                max={100}
+                                step={0.5}
+                                value={l.score}
+                                onChange={e => handleScoreChange(idx, e.target.value)}
+                                style={{
+                                  ...styles.scoreInput,
+                                  borderColor: l.score === "" ? "#fca5a5"
+                                    : l.score >= 80 ? "#86efac"
+                                    : l.score >= 50 ? "#fde68a"
+                                    : "#fca5a5",
+                                }}
+                                placeholder="0–100"
+                              />
+                              <span style={styles.pctLabel}>%</span>
+                            </div>
+                          )}
+                        </td>
+                      )}
                       <td style={{ ...styles.td, textAlign: "center", fontWeight: 600, color: "#6b7280", fontVariantNumeric: "tabular-nums" }}>
                         {weighted !== "—" ? `${weighted}%` : "—"}
                       </td>

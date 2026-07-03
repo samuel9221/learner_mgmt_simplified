@@ -10,6 +10,7 @@ const cors = require('cors');
 const { testConnection, closePool } = require('./config/database');
 const { errorHandler, notFound } = require('./middleware/errorHandler');
 const ensureExamTables = require('./utils/ensureExamTables');
+const path = require('path'); //added for automatic serving of static files
 
 const app  = express();
 const PORT = process.env.PORT || 5000;
@@ -55,6 +56,18 @@ app.use('/api/final-results',  require('./routes/finalResults.routes'));
 app.use('/api/analysis',       require('./routes/analysis.routes'));
 
 app.use('/api/reports', require('./routes/reports.routes'));
+
+//added for automatic serving of static files
+/* Serve React/Vite frontend */
+app.use(express.static(path.join(__dirname, '../frontend/dist')));
+
+// React catch-all route
+app.get(/^\/(?!api).*/, (req, res) => {
+  res.sendFile(
+    path.join(__dirname, '../frontend/dist/index.html')
+  );
+});
+// code for auto start ends here
 
 // ── Error handling ────────────────────────────────────────────────────────────
 app.use(notFound);

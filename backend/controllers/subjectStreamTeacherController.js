@@ -5,6 +5,65 @@
 
 const { query, transaction } = require('../config/database');
 
+const TEACHER_SUBJECT_LIMIT = 3;
+const TEACHER_STREAM_SUBJECT_LIMIT = 2;
+
+const validateTeacherAssignmentLoad = async (teacherId, subjectId, streamId, excludeAssignmentId = null) => {
+  const subjectParams = excludeAssignmentId
+    ? [teacherId, subjectId, excludeAssignmentId]
+    : [teacherId, subjectId];
+  const subjectExcludeClause = excludeAssignmentId ? 'AND id != $3' : '';
+
+  const subjectLoad = await query(
+    `SELECT
+       COUNT(DISTINCT subject_id) AS subject_count,
+       BOOL_OR(subject_id = $2) AS already_teaches_subject
+     FROM subject_stream_teachers
+     WHERE teacher_id = $1 ${subjectExcludeClause}`,
+    subjectParams
+  );
+
+  const subjectCount = parseInt(subjectLoad.rows[0].subject_count, 10) || 0;
+  const alreadyTeachesSubject = subjectLoad.rows[0].already_teaches_subject === true;
+
+  if (!alreadyTeachesSubject && subjectCount >= TEACHER_SUBJECT_LIMIT) {
+    return {
+      valid: false,
+      status: 403,
+      message: `Teacher has already been assigned the maximum of ${TEACHER_SUBJECT_LIMIT} different subjects. They can only be added to more streams for those same subjects.`,
+    };
+  }
+
+  const streamParams = excludeAssignmentId
+    ? [teacherId, subjectId, streamId, excludeAssignmentId]
+    : [teacherId, subjectId, streamId];
+  const streamExcludeClause = excludeAssignmentId ? 'AND id != $4' : '';
+
+  const streamLoad = await query(
+    `SELECT
+       COUNT(DISTINCT subject_id) AS stream_subject_count,
+       BOOL_OR(subject_id = $2) AS already_teaches_subject_in_stream
+     FROM subject_stream_teachers
+     WHERE teacher_id = $1
+       AND stream_id = $3
+       ${streamExcludeClause}`,
+    streamParams
+  );
+
+  const streamSubjectCount = parseInt(streamLoad.rows[0].stream_subject_count, 10) || 0;
+  const alreadyTeachesSubjectInStream = streamLoad.rows[0].already_teaches_subject_in_stream === true;
+
+  if (!alreadyTeachesSubjectInStream && streamSubjectCount >= TEACHER_STREAM_SUBJECT_LIMIT) {
+    return {
+      valid: false,
+      status: 403,
+      message: `Teacher cannot teach more than ${TEACHER_STREAM_SUBJECT_LIMIT} subjects in the same stream.`,
+    };
+  }
+
+  return { valid: true };
+};
+
 /**
  * @route   GET /api/subject-stream-teachers
  * @desc    Get all subject-stream-teacher assignments
@@ -181,17 +240,11 @@ const assignTeacherToSubject = async (req, res) => {
         current_teacher: existing.rows[0],
       });
     }
-
-    // Check teacher subject limit (will be caught by trigger, but good to check first)
-    const teacherSubjects = await query(
-      'SELECT COUNT(DISTINCT subject_id) as count FROM subject_stream_teachers WHERE teacher_id = $1',
-      [teacher_id]
-    );
-
-    if (parseInt(teacherSubjects.rows[0].count) >= 3) {
-      return res.status(403).json({
+    const loadValidation = await validateTeacherAssignmentLoad(teacher_id, subject_id, stream_id);
+    if (!loadValidation.valid) {
+      return res.status(loadValidation.status).json({
         success: false,
-        message: 'Teacher has already been assigned the maximum of 3 different subjects',
+        message: loadValidation.message,
       });
     }
 
@@ -228,7 +281,14 @@ const assignTeacherToSubject = async (req, res) => {
     if (error.message.includes('cannot be assigned more than 3')) {
       return res.status(403).json({
         success: false,
-        message: 'Teacher has already been assigned the maximum of 3 different subjects',
+        message: 'Teacher has already been assigned the maximum of 3 different subjects. They can only be added to more streams for those same subjects.',
+      });
+    }
+
+    if (error.message.includes('cannot teach more than 2 subjects in the same stream')) {
+      return res.status(403).json({
+        success: false,
+        message: 'Teacher cannot teach more than 2 subjects in the same stream',
       });
     }
 
@@ -283,26 +343,24 @@ const updateAssignment = async (req, res) => {
         message: 'Teacher not found or inactive',
       });
     }
+    const loadValidation = await validateTeacherAssignmentLoad(
+      teacher_id,
+      existing.rows[0].subject_id,
+      existing.rows[0].stream_id,
+      id
+    );
 
-    // Check new teacher's subject limit (if changing to different teacher)
-    if (teacher_id !== existing.rows[0].teacher_id) {
-      const teacherSubjects = await query(
-        'SELECT COUNT(DISTINCT subject_id) as count FROM subject_stream_teachers WHERE teacher_id = $1',
-        [teacher_id]
-      );
-
-      if (parseInt(teacherSubjects.rows[0].count) >= 3) {
-        return res.status(403).json({
-          success: false,
-          message: 'New teacher has already been assigned the maximum of 3 different subjects',
-        });
-      }
+    if (!loadValidation.valid) {
+      return res.status(loadValidation.status).json({
+        success: false,
+        message: loadValidation.message.replace('Teacher', 'New teacher'),
+      });
     }
 
     // Update assignment
     const result = await query(
       `UPDATE subject_stream_teachers 
-       SET teacher_id = $1, updated_at = NOW()
+       SET teacher_id = $1
        WHERE id = $2
        RETURNING *`,
       [teacher_id, id]
@@ -328,6 +386,20 @@ const updateAssignment = async (req, res) => {
     });
   } catch (error) {
     console.error('Error updating assignment:', error);
+    if (error.message.includes('cannot be assigned more than 3')) {
+      return res.status(403).json({
+        success: false,
+        message: 'New teacher has already been assigned the maximum of 3 different subjects. They can only be added to more streams for those same subjects.',
+      });
+    }
+
+    if (error.message.includes('cannot teach more than 2 subjects in the same stream')) {
+      return res.status(403).json({
+        success: false,
+        message: 'New teacher cannot teach more than 2 subjects in the same stream',
+      });
+    }
+
     res.status(500).json({
       success: false,
       message: 'Failed to update assignment',
@@ -402,15 +474,7 @@ const getAvailableTeachers = async (req, res) => {
            WHERE teacher_id = u.id), 
           0
         ) as subject_count,
-        CASE 
-          WHEN COALESCE(
-            (SELECT COUNT(DISTINCT subject_id) 
-             FROM subject_stream_teachers 
-             WHERE teacher_id = u.id), 
-            0
-          ) >= 3 THEN false
-          ELSE true
-        END as can_assign_more
+        true as can_assign_more
        FROM users u
        WHERE u.role = 'teacher' AND u.is_active = true
        ORDER BY u.first_name, u.last_name`

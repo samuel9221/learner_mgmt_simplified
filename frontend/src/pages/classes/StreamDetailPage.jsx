@@ -101,8 +101,9 @@ const StreamDetailPage = () => {
     subject => !assignments.find(a => a.subject_id === subject.id)
   );
 
-  // Get teachers who can still be assigned (not at max 3 subjects)
-  const availableTeachers = teachers.filter(t => t.can_assign_more);
+  // Teachers remain available for additional streams of their existing subjects,
+  // but they cannot take more than 2 subjects in the same stream.
+  const availableTeachers = teachers.filter(t => t.can_assign_more !== false);
 
   if (loading) {
     return (
@@ -274,14 +275,14 @@ const StreamDetailPage = () => {
                   </select>
                   {availableTeachers.length === 0 && (
                     <p className="text-xs text-red-500 mt-1">
-                      No teachers available (all at maximum 3 subjects)
+                      No teachers available right now.
                     </p>
                   )}
                 </div>
 
                 <div className="bg-blue-50 p-3 rounded-lg">
                   <p className="text-xs text-blue-700">
-                    <strong>Note:</strong> Each teacher can teach a maximum of 3 different subjects.
+                    <strong>Note:</strong> Each teacher can teach a maximum of 3 different subjects, and no more than 2 subjects in the same stream.
                   </p>
                 </div>
               </div>

@@ -212,7 +212,6 @@ CREATE TABLE report_card_subjects (
     id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
     report_card_id UUID NOT NULL REFERENCES report_cards(id) ON DELETE CASCADE,
     subject_id UUID NOT NULL REFERENCES subjects(id) ON DELETE CASCADE,
-    overall_achievement achievement_level NOT NULL,
     overall_score NUMERIC(5,2),
     teacher_remarks TEXT,
     strengths TEXT,
@@ -438,7 +437,6 @@ CREATE INDEX idx_learners_admission ON learners(admission_number);
 CREATE INDEX idx_learners_status ON learners(status);
 CREATE INDEX idx_classes_academic_year ON classes(academic_year_id);
 CREATE INDEX idx_subjects_active ON subjects(is_active);
-CREATE INDEX idx_achievement_levels_active ON achievement_levels(is_active);
 
 -- ============================================================================
 -- ADDITIONAL TABLE IN SCHEMA FOR SUBJECTS, TEACHERS, CLASS & STREAM HANDLING
@@ -468,21 +466,50 @@ CREATE TABLE subject_stream_teachers (
     UNIQUE(subject_id, stream_id, teacher_id)
 );
 
--- Constraint: Teacher can teach max 3 subjects
+-- Constraint: Teacher can teach max 3 distinct subjects, max 2 in one stream.
+-- Once at 3 subjects, the same teacher can still be assigned more streams for those subjects.
 CREATE OR REPLACE FUNCTION check_teacher_subject_limit()
 RETURNS TRIGGER AS $$
+DECLARE
+    excluded_assignment_id UUID;
+    subject_count INTEGER;
+    already_teaches_subject BOOLEAN;
+    stream_subject_count INTEGER;
+    already_teaches_subject_in_stream BOOLEAN;
 BEGIN
-    IF (SELECT COUNT(DISTINCT subject_id) 
-        FROM subject_stream_teachers 
-        WHERE teacher_id = NEW.teacher_id) >= 3 THEN
+    excluded_assignment_id := CASE WHEN TG_OP = 'UPDATE' THEN OLD.id ELSE NULL END;
+
+    SELECT
+        COUNT(DISTINCT subject_id),
+        COALESCE(BOOL_OR(subject_id = NEW.subject_id), FALSE)
+    INTO subject_count, already_teaches_subject
+    FROM subject_stream_teachers
+    WHERE teacher_id = NEW.teacher_id
+      AND (excluded_assignment_id IS NULL OR id <> excluded_assignment_id);
+
+    IF NOT already_teaches_subject AND subject_count >= 3 THEN
         RAISE EXCEPTION 'Teacher cannot be assigned more than 3 subjects';
     END IF;
+
+    SELECT
+        COUNT(DISTINCT subject_id),
+        COALESCE(BOOL_OR(subject_id = NEW.subject_id), FALSE)
+    INTO stream_subject_count, already_teaches_subject_in_stream
+    FROM subject_stream_teachers
+    WHERE teacher_id = NEW.teacher_id
+      AND stream_id = NEW.stream_id
+      AND (excluded_assignment_id IS NULL OR id <> excluded_assignment_id);
+
+    IF NOT already_teaches_subject_in_stream AND stream_subject_count >= 2 THEN
+        RAISE EXCEPTION 'Teacher cannot teach more than 2 subjects in the same stream';
+    END IF;
+
     RETURN NEW;
 END;
 $$ LANGUAGE plpgsql;
 
 CREATE TRIGGER enforce_teacher_subject_limit
-BEFORE INSERT ON subject_stream_teachers
+BEFORE INSERT OR UPDATE OF teacher_id, subject_id, stream_id ON subject_stream_teachers
 FOR EACH ROW EXECUTE FUNCTION check_teacher_subject_limit();
 
 -- 3. Subject Combinations (for S5/S6)
@@ -689,23 +716,21 @@ CREATE TABLE exam_results (
     subject_id UUID NOT NULL REFERENCES subjects(id) ON DELETE CASCADE,
     stream_id UUID REFERENCES streams(id),
     exam_session_id UUID NOT NULL REFERENCES exam_sessions(id) ON DELETE CASCADE,
-    score NUMERIC(5,2),
-    is_absent BOOLEAN DEFAULT FALSE,
-    teacher_id UUID NOT NULL REFERENCES users(id),
-    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-    UNIQUE (learner_id, subject_id, exam_session_id),
-    CONSTRAINT check_exam_score CHECK (
+      paper_number INTEGER,
+      score NUMERIC(5,2),
+      is_absent BOOLEAN DEFAULT FALSE,
+      teacher_id UUID NOT NULL REFERENCES users(id),
+      created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+      updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+      CONSTRAINT check_exam_score CHECK (
         (score IS NULL AND is_absent = TRUE) OR
         (score IS NOT NULL AND score >= 0 AND score <= 100)
-    )
-);
+      )
+    );
 
--- 4. Final Results (computed: mid 40% + end 60%)
-CREATE TABLE final_results (
-    id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
-    learner_id UUID NOT NULL REFERENCES learners(id) ON DELETE CASCADE,
-    subject_id UUID NOT NULL REFERENCES subjects(id) ON DELETE CASCADE,
+ALTER TABLE exam_results ADD COLUMN IF NOT EXISTS paper_number INTEGER;
+ALTER TABLE exam_results DROP CONSTRAINT IF EXISTS exam_results_learner_id_subject_id_exam_session_id_key;
+ALTER TABLE exam_results ADD CONSTRAINT exam_results_unique_paper UNIQUE (learner_id, subject_id, exam_session_id, paper_number);
     stream_id UUID REFERENCES streams(id),
     term_id UUID NOT NULL REFERENCES terms(id) ON DELETE CASCADE,
     mid_term_score NUMERIC(5,2),
